@@ -65,6 +65,9 @@ if st.button("🚀 Processar"):
                 zip_file.writestr(file_name_gpt, gpt_buffer.getvalue())
                 zip_file.writestr(file_name_iramuteq, iramuteq_buffer.getvalue())
 
+            # IMPORTANTE: Voltar o cursor para o início antes do download
+            zip_buffer.seek(0)
+
             # Botão para baixar o ZIP
             st.download_button(
                 label="📦 Baixar todos os arquivos (.zip)",
