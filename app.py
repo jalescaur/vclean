@@ -2,6 +2,8 @@ import streamlit as st
 import os, tempfile, zipfile
 from io import BytesIO
 
+#teste de commit
+
 # seu módulo atual de publicações (cleaning.py)
 from cleaning import process_and_export_excel as process_publicacoes, \
                      add_analysis_column_and_export_txt as analysis_publicacoes
