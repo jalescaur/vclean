@@ -1,85 +1,62 @@
 import streamlit as st
-import pandas as pd
-import os
-import re
-from datetime import datetime
+import os, tempfile, zipfile
 from io import BytesIO
-import tempfile
-import zipfile
-from cleaning import process_and_export_excel, add_analysis_column_and_export_txt
 
-# Configuração da página
+# seu módulo atual de publicações (cleaning.py)
+from cleaning import process_and_export_excel as process_publicacoes, \
+                     add_analysis_column_and_export_txt as analysis_publicacoes
+
+# novo módulo de notícias
+from process_noticias import process_and_export_excel as process_noticias, \
+                             add_analysis_column_and_export_txt as analysis_noticias
+
 st.set_page_config(page_title="V-Tracker: Data Cleaning", page_icon="📄", layout="centered")
 st.title("🧼 V-Tracker: Data Cleaning")
 
-# Seção de upload
-st.markdown("### Envie um arquivo:")
-
+# escolha de workflow
+option = st.selectbox("Selecione o tipo de dado:", ["Publicações", "Notícias"])
 uploaded_file = st.file_uploader("📤 Envie um arquivo .xlsx", type=["xlsx"])
 
-file_name = None
-if uploaded_file is not None:
-    base_name = os.path.splitext(uploaded_file.name)[0]
-    file_name_clean = f"{base_name}_cleaned.xlsx"
-    file_name_gpt = f"{base_name}_gpt.txt"
-    file_name_iramuteq = f"{base_name}_corpus.txt"
-    st.success(f"💾 Arquivos que serão gerados:\n- {file_name_clean}\n- {file_name_gpt}\n- {file_name_iramuteq}")
-
 if st.button("🚀 Processar"):
-    try:
-        if uploaded_file is not None:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp:
-                temp.write(uploaded_file.read())
-                temp_path = temp.name
+    if not uploaded_file:
+        st.warning("⚠️ Por favor, envie um arquivo antes de processar.")
+    else:
+        base = os.path.splitext(uploaded_file.name)[0]
+        file_clean    = f"{base}_cleaned.xlsx"
+        file_txt      = f"{base}.txt"
+        file_iramuteq = f"{base}_iramuteq.txt"
 
-            # Processar o arquivo
-            df = process_and_export_excel(temp_path, output_filename="do_not_save.xlsx")
+        # salva temp
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            tmp.write(uploaded_file.read())
+            tmp_path = tmp.name
 
-            # Remover arquivos temporários
-            os.remove(temp_path)
-            if os.path.exists("do_not_save.xlsx"):
-                os.remove("do_not_save.xlsx")
-
-            # Criar buffers de memória
-            excel_buffer = BytesIO()
-            df.to_excel(excel_buffer, index=False)
-
-            gpt_buffer = BytesIO()
-            df_with_analysis = add_analysis_column_and_export_txt(df.copy(), txt_filename=None)
-            gpt_lines = df_with_analysis["Análise"].str.cat(sep="\n")
-            gpt_buffer.write(gpt_lines.encode("utf-8"))
-
-            iramuteq_buffer = BytesIO()
-            iramuteq_lines = []
-            for _, row in df.iterrows():
-                id_val = row.get("ID", "")
-                nome = row.get("Nome publicador", "")
-                descricao = re.sub(r'[\|:\*"\?<>\|\$\-\'%]', '', str(row.get("Descrição", "")))
-                iramuteq_lines.append(f"**** *id_&{id_val} *u_&{nome}\n{descricao}\n")
-            iramuteq_buffer.write("".join(iramuteq_lines).encode("utf-8"))
-
-            # Criar o ZIP em memória
-            zip_buffer = BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w") as zip_file:
-                zip_file.writestr(file_name_clean, excel_buffer.getvalue())
-                zip_file.writestr(file_name_gpt, gpt_buffer.getvalue())
-                zip_file.writestr(file_name_iramuteq, iramuteq_buffer.getvalue())
-
-            # IMPORTANTE: Voltar o cursor para o início antes do download
-            zip_buffer.seek(0)
-
-            # Botão para baixar o ZIP
-            st.download_button(
-                label="📦 Baixar todos os arquivos (.zip)",
-                data=zip_buffer.getvalue(),
-                file_name=f"{base_name}_resultados.zip",
-                mime="application/zip"
-            )
-
-            st.success("✅ Arquivos gerados com sucesso!")
-
+        # chama a função certa
+        if option == "Publicações":
+            df = process_publicacoes(tmp_path, output_filename=file_clean)
+            df_analysis = analysis_publicacoes(df.copy(), txt_filename=None)
         else:
-            st.warning("⚠️ Por favor, envie um arquivo antes de processar.")
+            df = process_noticias(tmp_path, output_filename=file_clean)
+            df_analysis = analysis_noticias(df.copy(), txt_filename=None)
 
-    except Exception as e:
-        st.error(f"❌ Ocorreu um erro ao processar o arquivo: {e}")
+        os.remove(tmp_path)
+
+        # buffers para zip
+        excel_buf = BytesIO(); df.to_excel(excel_buf, index=False)
+        txt_buf   = BytesIO(); txt_buf.write(df_analysis["Análise"].str.cat(sep="\n").encode("utf-8"))
+        iram_buf  = BytesIO(open(file_iramuteq, "rb").read())
+
+        zip_buf = BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as z:
+            z.writestr(file_clean,    excel_buf.getvalue())
+            z.writestr(file_txt,      txt_buf.getvalue())
+            z.writestr(file_iramuteq, iram_buf.getvalue())
+        zip_buf.seek(0)
+
+        st.download_button(
+            label="📦 Baixar arquivos (.zip)",
+            data=zip_buf.getvalue(),
+            file_name=f"{base}_resultados.zip",
+            mime="application/zip"
+        )
+        st.success("✅ Tudo pronto! Baixe seu ZIP.")
