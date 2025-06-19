@@ -67,20 +67,28 @@ with tab1:
             file_ai       = f"{base}_ai.txt"
             file_iramuteq = f"{base}_corpus.txt"
 
-            # grava temporário
+            # 1) Salva o upload em temp
             with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
                 tmp.write(uploaded_pub.read())
                 tmp_path = tmp.name
 
-            # limpa e gera arquivos
+            # 2) Processa e gera *_cleaned.xlsx, *_cleaned.txt e *_cleaned_iramuteq.txt
             df = process_publicacoes(tmp_path, output_filename=file_clean)
-            df = analysis_publicacoes(df.copy(), txt_filename=file_ai)
+            # 3) Gera o AI no nome novo
+            analysis_publicacoes(df.copy(), txt_filename=file_ai)
+
+            # 4) Renomeia o IRAMUTEQ default para o novo padrão
+            old_iram = f"{base}_cleaned_iramuteq.txt"
+            if os.path.exists(old_iram):
+                os.rename(old_iram, file_iramuteq)
+
+            # 5) Limpa o temporário
             os.remove(tmp_path)
 
-            # empacota resultados
+            # 6) Empacota tudo
             excel_buf = BytesIO(); df.to_excel(excel_buf, index=False)
-            ai_buf    = BytesIO(open(file_ai,       "rb").read())
-            corp_buf  = BytesIO(open(file_iramuteq, "rb").read())
+            ai_buf    = BytesIO(open(file_ai,      "rb").read())
+            corp_buf  = BytesIO(open(file_iramuteq,"rb").read())
 
             zp = BytesIO()
             with zipfile.ZipFile(zp, "w") as z:
@@ -114,12 +122,17 @@ with tab2:
                 tmp_path = tmp.name
 
             df = process_noticias(tmp_path, output_filename=file_clean)
-            df = analysis_noticias(df.copy(), txt_filename=file_ai)
+            analysis_noticias(df.copy(), txt_filename=file_ai)
+
+            old_iram = f"{base}_cleaned_iramuteq.txt"
+            if os.path.exists(old_iram):
+                os.rename(old_iram, file_iramuteq)
+
             os.remove(tmp_path)
 
             excel_buf = BytesIO(); df.to_excel(excel_buf, index=False)
-            ai_buf    = BytesIO(open(file_ai,       "rb").read())
-            corp_buf  = BytesIO(open(file_iramuteq, "rb").read())
+            ai_buf    = BytesIO(open(file_ai,      "rb").read())
+            corp_buf  = BytesIO(open(file_iramuteq,"rb").read())
 
             zp = BytesIO()
             with zipfile.ZipFile(zp, "w") as z:
@@ -138,64 +151,83 @@ with tab2:
 # === Aba 3: Relatório Quinzenal ===
 with tab3:
     st.header("🗓️ Relatório Quinzenal")
-    multitema = st.checkbox("🔄 Análise multitemática?")
-    uploaded_bi = st.file_uploader("📂 Envie o Excel para Relatório Quinzenal", type=["xlsx"], key="ubi")
+    multitema = st.checkbox(
+        "🔄 Análise multitemática?",
+        help="Permitir repetir a mesma tag em vários macrotemas"
+    )
+
+    uploaded_bi = st.file_uploader(
+        "📂 Envie o Excel para Relatório Quinzenal",
+        type=["xlsx"],
+        key="ubi"
+    )
     if not uploaded_bi:
         st.info("⬆️ Por favor, envie um arquivo para iniciar.")
     else:
         base = os.path.splitext(uploaded_bi.name)[0]
-        file_clean    = f"{base}_cleaned.xlsx"
-        file_ai       = f"{base}_ai.txt"
-        file_iramuteq = f"{base}_corpus.txt"
-
+        # armazena upload em arquivo temporário
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
             tmp.write(uploaded_bi.read())
             raw_path = tmp.name
 
-        # lê tags
+        # tenta ler sheet Tags
         try:
             df_tags = pd.read_excel(raw_path, sheet_name="Tags", skiprows=4)
-            tag_options = df_tags.columns.tolist()
+            all_tags = df_tags.columns.tolist()
         except:
-            tag_options = []
+            all_tags = []
 
+        # inicializa session_state
         if "macros" not in st.session_state:
-            st.session_state.macros = {i: [] for i in range(1,5)}
+            st.session_state.macros = {i: [] for i in range(1, 5)}
 
-        # 4 selects + confirm each
-        for i in range(1,5):
-            used = set().union(*st.session_state.macros.values()) if not multitema else set()
-            choices = [t for t in tag_options if t not in used or t in st.session_state.macros[i]]
-            sel = st.multiselect(f"Macrotema {i}", choices, default=st.session_state.macros[i], key=f"sel{i}")
-            if st.button(f"✅ Confirmar Macrotema {i}", key=f"confirm{i}"):
-                st.session_state.macros[i] = sel
-                st.success(f"Macrotema {i} confirmado: {', '.join(sel) or 'Nenhum'}")
+        # para cada macrotema: 3/4 select + 1/4 botão confirm
+        used = set()  # todas as tags confirmadas até o momento
+        for i in range(1, 5):
+            used = set().union(*[tags for idx, tags in st.session_state.macros.items() if idx < i]) \
+                   if not multitema else set()
+            choices = [t for t in all_tags if t not in used or t in st.session_state.macros[i]]
 
-        # gerar relatório
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                sel = st.multiselect(
+                    f"Macrotema {i}", 
+                    options=choices, 
+                    default=st.session_state.macros[i],
+                    key=f"sel_{i}"
+                )
+            with col2:
+                if st.button(f"✅", key=f"confirm_{i}", help=f"Confirmar Macrotema {i}"):
+                    st.session_state.macros[i] = sel
+                    st.success(f"Macrotema {i} salvo: {', '.join(sel) or 'Nenhum'}")
+
+        # botão final
         if st.button("📊 Gerar Relatório Quinzenal"):
-            progress = st.progress(0, text="⏳ Processando dados...")
-            for pct in (20,50,80):
+            progress = st.progress(0, text="⏳ Processando dados…")
+            for pct in (20, 50, 80):
                 time.sleep(0.1)
                 progress.progress(pct)
 
-            # roda pipeline
+            file_clean    = f"{base}_cleaned.xlsx"
+            file_ai       = f"{base}_ai.txt"
+            file_iramuteq = f"{base}_corpus.txt"
+
             cleaned_path, macro_txts, iram_txt = full_pipeline(
                 raw_filepath           = raw_path,
                 macrotheme_definitions = st.session_state.macros,
                 cleaned_output_filename= file_clean
             )
 
-            # gera ai + corpus do quinzenal
-            # (assumimos que full_pipeline salva também os txts com esses padrões)
             # empacota tudo
             zp = BytesIO()
-            with zipfile.ZipFile(zp, "w") as z:
-                z.write(cleaned_path,    arcname=file_clean)
-                z.write(file_ai,         arcname=file_ai)
-                z.write(file_iramuteq,   arcname=file_iramuteq)
+            with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
+                z.writestr(file_clean, open(cleaned_path,    "rb").read())
+                z.writestr(file_ai,    open(file_ai,       "rb").read())
+                z.writestr(file_iramuteq, open(file_iramuteq, "rb").read())
                 for p in macro_txts:
-                    z.write(p, arcname=Path(p).name)
+                    z.writestr(Path(p).name, open(p, "rb").read())
             zp.seek(0)
+            progress.progress(100)
 
             st.download_button(
                 "📥 Baixar Relatório Quinzenal",
@@ -204,5 +236,6 @@ with tab3:
             )
             st.success("🎉 Relatório Quinzenal gerado com sucesso!")
 
+        # cleanup temporário
         if os.path.exists(raw_path):
             os.remove(raw_path)
