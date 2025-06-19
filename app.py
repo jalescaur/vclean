@@ -16,7 +16,7 @@ from news import (
     process_and_export_excel    as process_noticias,
     add_analysis_column_and_export_txt as analysis_noticias
 )
-from bi_weekly import full_pipeline  # antes bi_weekly.py
+from biweekly import full_pipeline  # antes biweekly.py
 
 # ==== Configuração da página ====
 st.set_page_config(
