@@ -68,8 +68,8 @@ with tab1:
         if st.button("📊 Processar Publicações"):
             base = os.path.splitext(uploaded_pub.name)[0]
             file_clean    = f"{base}_cleaned.xlsx"
-            file_txt      = file_clean.replace(".xlsx", ".txt")
-            file_iramuteq = file_clean.replace(".xlsx", "_iramuteq.txt")
+            file_gpt      = f"{base}_gpt.txt"
+            file_iramuteq = f"{base}_corpus.txt"
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
                 tmp.write(uploaded_pub.read())
@@ -89,7 +89,7 @@ with tab1:
             zp = BytesIO()
             with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
                 z.writestr(file_clean,    excel_buf.getvalue())
-                z.writestr(file_txt,      txt_buf.getvalue())
+                z.writestr(file_gpt,      txt_buf.getvalue())
                 z.writestr(file_iramuteq, iram_buf.getvalue())
             zp.seek(0)
 
@@ -114,8 +114,8 @@ with tab2:
         if st.button("📊 Processar Notícias"):
             base = os.path.splitext(uploaded_news.name)[0]
             file_clean    = f"{base}_cleaned.xlsx"
-            file_txt      = file_clean.replace(".xlsx", ".txt")
-            file_iramuteq = file_clean.replace(".xlsx", "_iramuteq.txt")
+            file_gpt      = f"{base}_gpt.txt"
+            file_iramuteq = f"{base}_corpus.txt"
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
                 tmp.write(uploaded_news.read())
@@ -135,7 +135,7 @@ with tab2:
             zp = BytesIO()
             with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
                 z.writestr(file_clean,    excel_buf.getvalue())
-                z.writestr(file_txt,      txt_buf.getvalue())
+                z.writestr(file_gpt,      txt_buf.getvalue())
                 z.writestr(file_iramuteq, iram_buf.getvalue())
             zp.seek(0)
 
@@ -151,60 +151,88 @@ with tab2:
 # ----------------------------------------
 with tab3:
     st.header("🗓️ Relatório Quinzenal")
+    multitema = st.checkbox("🔄 Análise multitemática?", help="Permitir repetir a mesma tag em vários macrotemas")
+
     uploaded_bi = st.file_uploader(
-        "📂 Envie o Excel para Relatório Quinzenal", 
-        type=["xlsx"], key="ubi"
+        "📂 Envie o Excel para Relatório Quinzenal",
+        type=["xlsx"],
+        key="ubi"
     )
     if not uploaded_bi:
         st.info("⬆️ Por favor, envie um arquivo para iniciar.")
     else:
         base = os.path.splitext(uploaded_bi.name)[0]
+        # grava o upload
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
             tmp.write(uploaded_bi.read())
             raw_path = tmp.name
 
+        # lê as colunas de Tags
         try:
             df_tags = pd.read_excel(raw_path, sheet_name="Tags", skiprows=4)
             tag_options = df_tags.columns.tolist()
         except Exception:
             tag_options = []
 
-        st.subheader("Selecione até 4 Macrotemas")
-        macros = {}
-        for i in range(1, 5):
-            macros[i] = st.multiselect(
-                f"Macrotema {i}", tag_options, key=f"mt{i}"
-            )
+        # inicia estado de seleção
+        if "current_macro" not in st.session_state:
+            st.session_state.current_macro = 1
+            st.session_state.macros = {}
 
-        if st.button("📊 Gerar Relatório Quinzenal"):
-            progress = st.progress(0, text="⏳ Processando...")
-            for pct in (20, 50, 80):
-                time.sleep(0.1)
-                progress.progress(pct)
+        # se ainda faltam macrotemas:
+        idx = st.session_state.current_macro
+        if idx <= 4:
+            st.subheader(f"Selecione Macrotema {idx}")
+            # filtra opções já usadas, se multitema == False
+            if multitema:
+                choices = tag_options
+            else:
+                used = set().union(*st.session_state.macros.values())
+                choices = [t for t in tag_options if t not in used]
 
-            cleaned_path, macro_txts, iram_txt = full_pipeline(
-                raw_filepath=raw_path,
-                macrotheme_definitions=macros,
-                cleaned_output_filename=f"{base}_cleaned.xlsx"
-            )
+            sel = st.multiselect(f"Macrotema {idx}", choices, key=f"mt{idx}")
 
-            zp = BytesIO()
-            with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
-                with open(cleaned_path, "rb") as f:
-                    z.writestr(cleaned_path.name, f.read())
-                with open(iram_txt, "rb") as f:
-                    z.writestr(iram_txt.name, f.read())
-                for p in macro_txts:
-                    with open(p, "rb") as f:
-                        z.writestr(p.name, f.read())
-            zp.seek(0)
-            progress.progress(100)
+            if st.button(f"✅ Confirmar Macrotema {idx}"):
+                st.session_state.macros[idx] = sel
+                st.session_state.current_macro += 1
+                st.experimental_rerun()  # safe here to advance the UI
 
-            st.download_button(
-                "📥 Baixar Relatório Quinzenal",
-                data=zp,
-                file_name=f"{base}_relatorio_quinzenal.zip"
-            )
-            st.success("🎉 Relatório Quinzenal gerado com sucesso!")
+        else:
+            # todos selecionados
+            st.subheader("Macrotemas Confirmados:")
+            for i, tags in st.session_state.macros.items():
+                st.write(f"- Macrotema {i}: {', '.join(tags) or 'Nenhum'}")
 
-        os.remove(raw_path)
+            if st.button("📊 Gerar Relatório Quinzenal"):
+                progress = st.progress(0, text="⏳ Processando dados...")
+                for pct in (20,50,80):
+                    time.sleep(0.1)
+                    progress.progress(pct)
+
+                cleaned_path, macro_txts, iram_txt = full_pipeline(
+                    raw_filepath           = raw_path,
+                    macrotheme_definitions = st.session_state.macros,
+                    cleaned_output_filename= f"{base}_cleaned.xlsx"
+                )
+
+                # ZIP final
+                zp = BytesIO()
+                with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
+                    z.writestr(Path(cleaned_path).name, open(cleaned_path, "rb").read())
+                    z.writestr(Path(iram_txt).name,       open(iram_txt,    "rb").read())
+                    for p in macro_txts:
+                        z.writestr(Path(p).name, open(p, "rb").read())
+                zp.seek(0)
+                progress.progress(100)
+
+                st.download_button(
+                    "📥 Baixar Relatório Quinzenal",
+                    data=zp,
+                    file_name=f"{base}_relatorio_quinzenal.zip"
+                )
+                st.success("🎉 Relatório Quinzenal gerado com sucesso!")
+
+        # ao final da execução, limpe o temp
+        # (pode querer mover isso para depois do download)
+        if os.path.exists(raw_path):
+            os.remove(raw_path)
