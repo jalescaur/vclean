@@ -269,7 +269,7 @@ def full_pipeline(raw_filepath, macrotheme_definitions, cleaned_output_filename)
     assignments = assign_macrothemes(df, macrotheme_definitions)
 
     # Export final Excel with pivots
-    with pd.ExcelWriter(cleaned_path, engine="xlsxwriter") as writer:
+    with pd.ExcelWriter(cleaned_path, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name='Cleaned Data')
         pivot_summary, total_posts = create_pivot_summary(df, assignments, macrotheme_definitions)
         pivot_summary.to_excel(writer, index=False, sheet_name='pvt_summary')
