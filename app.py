@@ -7,198 +7,233 @@ import pandas as pd
 from io import BytesIO
 from pathlib import Path
 
-# === Import dos módulos existentes ===
+# ==== seus módulos renomeados ====
 from daily_posts import (
-    process_and_export_excel as process_publicacoes,
+    process_and_export_excel    as process_publicacoes,
     add_analysis_column_and_export_txt as analysis_publicacoes
 )
 from news import (
-    process_and_export_excel as process_noticias,
+    process_and_export_excel    as process_noticias,
     add_analysis_column_and_export_txt as analysis_noticias
 )
-from biweekly import full_pipeline
+from bi_weekly import full_pipeline  # antes bi_weekly.py
 
-# === Configuração da página e estilo ===
-st.set_page_config(page_title="🧼 V-Tracker: Data Cleaning", page_icon="📄", layout="centered")
-st.markdown("""
-    <style>
-        body, .main { background-color: #ffffff; }
-        .stButton>button, .stDownloadButton>button {
-            background-color: #26619c; color: white; border-radius: 8px;
-            padding: 0.5em 1em; font-size: 16px;
-        }
-        .stFileUploader>div { background-color: #f0f2f6; padding:1em;
-            border:1px solid #26619c; border-radius:10px;
-        }
-        h1,h2,h3,h4,h5,h6, .css-1v0mbdj p, .css-1v0mbdj label { color: #26619c; }
-    </style>
-""", unsafe_allow_html=True)
-
-# === Sidebar: escolha do workflow ===
-workflow = st.sidebar.selectbox(
-    "🔄 Escolha o tipo de processamento",
-    ["Publicações", "Notícias", "Relatório Quinzenal"]
+# ==== Configuração da página ====
+st.set_page_config(
+    page_title="📊 V-Tracker: Data Cleaning & Analysis",
+    page_icon="📈",
+    layout="wide"
 )
 
-# === Workflow 1 & 2: Publicações ou Notícias ===
-if workflow in ["Publicações", "Notícias"]:
-    st.title(f"🧼 V-Tracker: Data Cleaning — {workflow}")
-    uploaded_file = st.file_uploader("📤 Envie um arquivo .xlsx", type=["xlsx"])
-    
-    if st.button("🚀 Processar"):
-        if not uploaded_file:
-            st.warning("⚠️ Por favor, envie um arquivo antes de processar.")
-        else:
-            base = os.path.splitext(uploaded_file.name)[0]
-            file_clean    = f"{base}_cleaned.xlsx"
-            file_txt      = file_clean.replace(".xlsx", ".txt")
-            file_iramuteq = file_clean.replace(".xlsx", "_corpus.txt")
+# ==== CSS customizado ====
+st.markdown("""
+<style>
+    /* Cores principais */
+    :root {
+        --primary: #26619c;
+        --secondary: #C5C6D0;
+    }
 
-            # grava temporário
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-                tmp.write(uploaded_file.read())
-                tmp_path = tmp.name
+    /* Botões principais */
+    .stButton>button, .stDownloadButton>button {
+        background-color: var(--primary) !important;
+        color: white !important;
+        border-radius: 8px;
+        padding: 0.5em 1em;
+        font-size: 16px;
+    }
 
-            # chama o processamento certo
-            if workflow == "Publicações":
-                df = process_publicacoes(tmp_path, output_filename=file_clean)
-                df_analysis = analysis_publicacoes(df.copy(), txt_filename=None)
-            else:
-                df = process_noticias(tmp_path, output_filename=file_clean)
-                df_analysis = analysis_noticias(df.copy(), txt_filename=None)
+    /* Uploaders com destaque secundário */
+    .stFileUploader>div {
+        background-color: var(--secondary) !important;
+        padding: 1em !important;
+        border: 1px solid var(--primary) !important;
+        border-radius: 10px !important;
+    }
 
-            os.remove(tmp_path)
+    /* Cabeçalhos e textos em destaque principal */
+    h1, h2, h3, h4, h5, h6, .css-1v0mbdj p, .css-1v0mbdj label {
+        color: var(--primary) !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-            # prepara buffers
-            excel_buf = BytesIO(); df.to_excel(excel_buf, index=False)
-            txt_buf   = BytesIO(); txt_buf.write(df_analysis["Análise"].str.cat(sep="\n").encode("utf-8"))
-            iram_buf  = BytesIO()
-            with open(file_iramuteq, "rb") as f: iram_buf.write(f.read())
+# ==== Título geral ====
+st.title("📊 V-Tracker: Data Cleaning & Analysis")
 
-            # gera ZIP
-            zip_buf = BytesIO()
-            with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as z:
-                z.writestr(file_clean,    excel_buf.getvalue())
-                z.writestr(file_txt,      txt_buf.getvalue())
-                z.writestr(file_iramuteq, iram_buf.getvalue())
-            zip_buf.seek(0)
+# ==== Abas para cada fluxo ====
+tab1, tab2, tab3 = st.tabs([
+    "📱 Publicações", 
+    "🗞️ Notícias", 
+    "🗓️ Relatório Quinzenal"
+])
 
-            st.download_button(
-                label="📦 Baixar arquivos (.zip)",
-                data=zip_buf,
-                file_name=f"{base}_resultados.zip",
-                mime="application/zip"
-            )
-            st.success("✅ Tudo pronto! Baixe seu .zip.")
+# ----------------------------------------
+# === ABA 1: Publicações de Redes Sociais
+# ----------------------------------------
+with tab1:
+    st.header("📱 Processamento de Publicações")
+    uploaded_pub = st.file_uploader(
+        "📂 Envie o Excel de Publicações", type=["xlsx"], key="upub"
+    )
+    if uploaded_pub and st.button("📊 Processar Publicações"):
+        base = os.path.splitext(uploaded_pub.name)[0]
+        file_clean    = f"{base}_cleaned.xlsx"
+        file_txt      = file_clean.replace(".xlsx", ".txt")
+        file_iramuteq = file_clean.replace(".xlsx", "_iramuteq.txt")
 
-# === Workflow 3: Relatório Quinzenal ===
-else:
-    st.title("🧼 V-Tracker: Relatório Quinzenal")
-    uploaded_file = st.file_uploader("📤 Envie um arquivo .xlsx", type=["xlsx"])
-    
-    if not uploaded_file:
-        st.info("⬆️ Por favor, envie um arquivo para iniciar.")
-    else:
-        base_name = os.path.splitext(uploaded_file.name)[0]
         # grava temporário
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-            tmp.write(uploaded_file.read())
-            temp_path = tmp.name
+            tmp.write(uploaded_pub.read())
+            tmp_path = tmp.name
 
-        # tenta ler tags para macrotemas
+        # roda limpeza
+        df = process_publicacoes(tmp_path, output_filename=file_clean)
+        df_analysis = analysis_publicacoes(df.copy(), txt_filename=None)
+        os.remove(tmp_path)
+
+        # prepara ZIP
+        excel_buf = BytesIO(); df.to_excel(excel_buf, index=False)
+        txt_buf   = BytesIO(); txt_buf.write(
+            df_analysis["Análise"].str.cat(sep="\n").encode("utf-8")
+        )
+        iram_buf  = BytesIO()
+        with open(file_iramuteq, "rb") as f: iram_buf.write(f.read())
+
+        zp = BytesIO()
+        with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
+            z.writestr(file_clean,    excel_buf.getvalue())
+            z.writestr(file_txt,      txt_buf.getvalue())
+            z.writestr(file_iramuteq, iram_buf.getvalue())
+        zp.seek(0)
+
+        st.download_button(
+            "📥 Baixar Resultados (Publicações)",
+            data=zp,
+            file_name=f"{base}_publicacoes.zip"
+        )
+        st.success("✅ Publicações processadas com sucesso!")
+
+# ----------------------------------------
+# === ABA 2: Notícias
+# ----------------------------------------
+with tab2:
+    st.header("🗞️ Processamento de Notícias")
+    uploaded_news = st.file_uploader(
+        "📂 Envie o Excel de Notícias", type=["xlsx"], key="unews"
+    )
+    if uploaded_news and st.button("📊 Processar Notícias"):
+        base = os.path.splitext(uploaded_news.name)[0]
+        file_clean    = f"{base}_cleaned.xlsx"
+        file_txt      = file_clean.replace(".xlsx", ".txt")
+        file_iramuteq = file_clean.replace(".xlsx", "_iramuteq.txt")
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            tmp.write(uploaded_news.read())
+            tmp_path = tmp.name
+
+        df = process_noticias(tmp_path, output_filename=file_clean)
+        df_analysis = analysis_noticias(df.copy(), txt_filename=None)
+        os.remove(tmp_path)
+
+        excel_buf = BytesIO(); df.to_excel(excel_buf, index=False)
+        txt_buf   = BytesIO(); txt_buf.write(
+            df_analysis["Análise"].str.cat(sep="\n").encode("utf-8")
+        )
+        iram_buf  = BytesIO()
+        with open(file_iramuteq, "rb") as f: iram_buf.write(f.read())
+
+        zp = BytesIO()
+        with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
+            z.writestr(file_clean,    excel_buf.getvalue())
+            z.writestr(file_txt,      txt_buf.getvalue())
+            z.writestr(file_iramuteq, iram_buf.getvalue())
+        zp.seek(0)
+
+        st.download_button(
+            "📥 Baixar Resultados (Notícias)",
+            data=zp,
+            file_name=f"{base}_noticias.zip"
+        )
+        st.success("✅ Notícias processadas com sucesso!")
+
+# ----------------------------------------
+# === ABA 3: Relatório Quinzenal
+# ----------------------------------------
+with tab3:
+    st.header("🗓️ Relatório Quinzenal")
+    uploaded_bi = st.file_uploader(
+        "📂 Envie o Excel para Relatório Quinzenal", 
+        type=["xlsx"], key="ubi"
+    )
+
+    if not uploaded_bi:
+        st.info("⬆️ Por favor, envie um arquivo para iniciar.")
+    else:
+        base = os.path.splitext(uploaded_bi.name)[0]
+        # salva temporário
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            tmp.write(uploaded_bi.read())
+            raw_path = tmp.name
+
+        # extrai possíveis tags
         try:
-            df_tags = pd.read_excel(temp_path, sheet_name="Tags", skiprows=4)
-            available_tags = df_tags.columns.tolist()
-        except Exception as e:
-            st.error(f"❌ Erro ao carregar aba 'Tags': {e}")
-            available_tags = []
+            df_tags = pd.read_excel(raw_path, sheet_name="Tags", skiprows=4)
+            tag_options = df_tags.columns.tolist()
+        except Exception:
+            tag_options = []
 
-        # sidebar: seleção de macrotemas
-        st.sidebar.header("🎯 Defina os Macrotemas")
-        st.sidebar.caption("Selecione até 4 temas diferentes e confirme.")
+        st.subheader("Selecione até 4 Macrotemas")
+        with st.form("macro_form"):
+            macros = {}
+            selected = set()
+            for i in range(1, 5):
+                choices = [t for t in tag_options if t not in selected]
+                sel = st.multiselect(f"Macrotema {i}", choices, key=f"mt{i}")
+                macros[i] = sel
+                selected |= set(sel)
 
-        if "macrothemes" not in st.session_state:
-            st.session_state.macrothemes = None
-            st.session_state.confirmed   = False
+            submit = st.form_submit_button("✅ Confirmar Macrotemas")
 
-        # configuração temporária
-        macro_temp = {i: [] for i in range(1,5)}
-        selected = set()
-        for i in range(1,5):
-            options = [t for t in available_tags if t not in selected]
-            sel = st.sidebar.multiselect(f"Macrotema {i}", options, key=f"mtemp{i}")
-            macro_temp[i] = sel
-            selected.update(sel)
+        if submit:
+            st.session_state.macros = macros
 
-        st.sidebar.info(f"📚 Temas restantes: {len(available_tags) - len(selected)}")
+        if "macros" in st.session_state:
+            st.write("#### Macrotemas Confirmados:")
+            for i, tags in st.session_state.macros.items():
+                st.write(f"- Macrotema {i}: {', '.join(tags) or 'Nenhum'}")
 
-        if st.sidebar.button("✅ Confirmar Seleções"):
-            st.session_state.macrothemes = macro_temp
-            st.session_state.confirmed   = True
-            st.experimental_rerun()
-
-        if st.sidebar.button("🔄 Resetar Seleções"):
-            st.session_state.macrothemes = None
-            st.session_state.confirmed   = False
-            for i in range(1,5):
-                st.session_state.pop(f"mtemp{i}", None)
-            st.experimental_rerun()
-
-        # depois de confirmar
-        if st.session_state.confirmed:
-            macrothemes = st.session_state.macrothemes
-            st.write("### Macrotemas Confirmados:")
-            for i in range(1,5):
-                st.write(f"**Macrotema {i}:** {', '.join(macrothemes[i]) or 'Nenhum'}")
-
-            if st.button("🚀 Gerar Relatório Quinzenal"):
+            if st.button("📊 Gerar Relatório"):
                 progress = st.progress(0, text="⏳ Processando dados...")
-                # opcional simulação de progresso
-                for pct in range(0, 30, 10):
+                for pct in (20, 50, 80):
                     time.sleep(0.1)
-                    progress.progress(pct, text="⏳ Carregando e limpando")
+                    progress.progress(pct)
 
-                # executa pipeline
                 cleaned_path, macro_txts, iram_txt = full_pipeline(
-                    raw_filepath=temp_path,
-                    macrotheme_definitions=macrothemes,
-                    cleaned_output_filename=f"{base_name}_cleaned.xlsx"
+                    raw_filepath      = raw_path,
+                    macrotheme_definitions = st.session_state.macros,
+                    cleaned_output_filename= f"{base}_cleaned.xlsx"
                 )
 
-                for pct in range(30, 80, 10):
-                    time.sleep(0.1)
-                    progress.progress(pct, text="🔧 Gerando relatórios")
-
-                # empacota tudo em ZIP
-                zip_buffer = BytesIO()
-                with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as z:
-                    # Excel final
+                # empacota resultados
+                zp = BytesIO()
+                with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
                     with open(cleaned_path, "rb") as f:
                         z.writestr(cleaned_path.name, f.read())
-                    # Iramuteq
                     with open(iram_txt, "rb") as f:
                         z.writestr(iram_txt.name, f.read())
-                    # Macrotema txts
                     for p in macro_txts:
                         with open(p, "rb") as f:
                             z.writestr(p.name, f.read())
-                zip_buffer.seek(0)
-
-                progress.progress(100, text="✅ Relatório pronto!")
-                st.success("🎉 Arquivos gerados com sucesso!")
+                zp.seek(0)
+                progress.progress(100)
 
                 st.download_button(
-                    label="📥 Baixar Tudo (.zip)",
-                    data=zip_buffer,
-                    file_name=f"{base_name}_report.zip",
-                    mime="application/zip"
+                    "📥 Baixar Relatório Quinzenal",
+                    data=zp,
+                    file_name=f"{base}_relatorio_quinzenal.zip"
                 )
+                st.success("🎉 Relatório Quinzenal gerado com sucesso!")
 
-                # cleanup
-                os.remove(temp_path)
-                cleaned_path.unlink()
-                iram_txt.unlink()
-                for p in macro_txts:
-                    p.unlink()
-        else:
-            st.info("⬅️ Confirme os macrotemas na barra lateral.")
+        # limpeza do temporário
+        os.remove(raw_path)
