@@ -273,18 +273,34 @@ def full_pipeline(raw_filepath, macrotheme_definitions, cleaned_output_filename)
         df.to_excel(writer, index=False, sheet_name='Cleaned Data')
         pivot_summary, total_posts = create_pivot_summary(df, assignments, macrotheme_definitions)
         pivot_summary.to_excel(writer, index=False, sheet_name='pvt_summary')
-
-        macro_freq, microtheme_freq = create_relative_frequency_summary(df, assignments, macrotheme_definitions, total_posts)
+        macro_freq, microtheme_freq = create_relative_frequency_summary(
+            df, assignments, macrotheme_definitions, total_posts
+        )
         macro_freq.to_excel(writer, index=False, sheet_name='macro_freq')
         microtheme_freq.to_excel(writer, index=False, sheet_name='microtheme_freq')
 
-    # Export .txt files
-    output_txts = export_macrotheme_txts(df, assignments, macrotheme_definitions, cleaned_path.stem, cleaned_path.parent)
+    # --- Novo código para definir o prefixo base sem "_cleaned" ---
+    stem = cleaned_path.stem
+    if stem.endswith("_cleaned"):
+        clean_base = stem[:-len("_cleaned")]
+    else:
+        clean_base = stem
 
-    # Export Iramuteq .txt
-    iramuteq_txt_path = cleaned_path.parent / f"{cleaned_path.stem}_iramuteq.txt"
+    # Prefixo para arquivos de macrotema com sufixo "_ai"
+    ai_macro_base = f"{clean_base}_ai"
+    # --- Fim do novo código ---
+
+    # Export macrotheme .txt usando o novo base_name (inclui "_ai")
+    output_txts = export_macrotheme_txts(
+        df,
+        assignments,
+        macrotheme_definitions,
+        base_name=ai_macro_base,           # <— aqui usamos {base}_ai
+        output_dir=cleaned_path.parent
+    )
+
+    # Export Iramuteq .txt com sufixo "_corpus.txt"
+    iramuteq_txt_path = cleaned_path.parent / f"{clean_base}_corpus.txt"
     export_iramuteq(df, iramuteq_txt_path)
 
     return cleaned_path, output_txts, iramuteq_txt_path
-
-
