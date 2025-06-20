@@ -54,10 +54,13 @@ tab1, tab2, tab3 = st.tabs([
     "🗓️ Relatório Quinzenal"
 ])
 
-# === Aba 1: Publicações ===
 with tab1:
     st.header("📱 Processamento de Publicações")
-    uploaded_pub = st.file_uploader("📂 Envie o Excel de Publicações", type=["xlsx"], key="upub")
+    uploaded_pub = st.file_uploader(
+        "📂 Envie o Excel de Publicações",
+        type=["xlsx"],
+        key="upub"
+    )
     if not uploaded_pub:
         st.info("⬆️ Por favor, envie um arquivo para iniciar.")
     else:
@@ -65,41 +68,44 @@ with tab1:
             base = os.path.splitext(uploaded_pub.name)[0]
             file_clean    = f"{base}_cleaned.xlsx"
             file_ai       = f"{base}_ai.txt"
-            file_iramuteq = f"{base}_corpus.txt"
+            file_corpus   = f"{base}_corpus.txt"
 
-            # 1) Salva o upload em temp
+            # 1) Grava upload em temporário
             with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
                 tmp.write(uploaded_pub.read())
                 tmp_path = tmp.name
 
-            # 2) Processa e gera *_cleaned.xlsx, *_cleaned.txt e *_cleaned_iramuteq.txt
+            # 2) Gera cleaned.xlsx
             df = process_publicacoes(tmp_path, output_filename=file_clean)
-            # 3) Gera o AI no nome novo
+
+            # 3) Gera base_ai.txt
             analysis_publicacoes(df.copy(), txt_filename=file_ai)
 
-            # 4) Renomeia o IRAMUTEQ default para o novo padrão
-            old_iram = f"{base}_cleaned_iramuteq.txt"
+            # 4) Renomeia o corpus default para base_corpus.txt
+            old_iram = file_clean.replace(".xlsx", "_iramuteq.txt")
             if os.path.exists(old_iram):
-                os.rename(old_iram, file_iramuteq)
+                os.rename(old_iram, file_corpus)
 
-            # 5) Limpa o temporário
+            # 5) Limpa temporário
             os.remove(tmp_path)
 
-            # 6) Empacota tudo
-            excel_buf = BytesIO(); df.to_excel(excel_buf, index=False)
-            ai_buf    = BytesIO(open(file_ai,      "rb").read())
-            corp_buf  = BytesIO(open(file_iramuteq,"rb").read())
+            # 6) Empacota no ZIP
+            excel_buf = BytesIO()
+            df.to_excel(excel_buf, index=False)
+
+            ai_buf    = BytesIO(open(file_ai,     "rb").read())
+            corp_buf  = BytesIO(open(file_corpus, "rb").read())
 
             zp = BytesIO()
-            with zipfile.ZipFile(zp, "w") as z:
-                z.writestr(file_clean,    excel_buf.getvalue())
-                z.writestr(file_ai,       ai_buf.getvalue())
-                z.writestr(file_iramuteq, corp_buf.getvalue())
+            with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
+                z.writestr(file_clean,  excel_buf.getvalue())
+                z.writestr(file_ai,     ai_buf.getvalue())
+                z.writestr(file_corpus, corp_buf.getvalue())
             zp.seek(0)
 
             st.download_button(
                 "📥 Baixar Resultados (Publicações)",
-                data=zp,
+                data=zp.getvalue(),
                 file_name=f"{base}_publicacoes.zip"
             )
             st.success("✅ Publicações processadas com sucesso!")
@@ -107,7 +113,11 @@ with tab1:
 # === Aba 2: Notícias ===
 with tab2:
     st.header("🗞️ Processamento de Notícias")
-    uploaded_news = st.file_uploader("📂 Envie o Excel de Notícias", type=["xlsx"], key="unews")
+    uploaded_news = st.file_uploader(
+        "📂 Envie o Excel de Notícias",
+        type=["xlsx"],
+        key="unews"
+    )
     if not uploaded_news:
         st.info("⬆️ Por favor, envie um arquivo para iniciar.")
     else:
@@ -115,7 +125,7 @@ with tab2:
             base = os.path.splitext(uploaded_news.name)[0]
             file_clean    = f"{base}_cleaned.xlsx"
             file_ai       = f"{base}_ai.txt"
-            file_iramuteq = f"{base}_corpus.txt"
+            file_corpus   = f"{base}_corpus.txt"
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
                 tmp.write(uploaded_news.read())
@@ -124,26 +134,28 @@ with tab2:
             df = process_noticias(tmp_path, output_filename=file_clean)
             analysis_noticias(df.copy(), txt_filename=file_ai)
 
-            old_iram = f"{base}_cleaned_iramuteq.txt"
+            old_iram = file_clean.replace(".xlsx", "_iramuteq.txt")
             if os.path.exists(old_iram):
-                os.rename(old_iram, file_iramuteq)
+                os.rename(old_iram, file_corpus)
 
             os.remove(tmp_path)
 
-            excel_buf = BytesIO(); df.to_excel(excel_buf, index=False)
-            ai_buf    = BytesIO(open(file_ai,      "rb").read())
-            corp_buf  = BytesIO(open(file_iramuteq,"rb").read())
+            excel_buf = BytesIO()
+            df.to_excel(excel_buf, index=False)
+
+            ai_buf    = BytesIO(open(file_ai,     "rb").read())
+            corp_buf  = BytesIO(open(file_corpus, "rb").read())
 
             zp = BytesIO()
-            with zipfile.ZipFile(zp, "w") as z:
-                z.writestr(file_clean,    excel_buf.getvalue())
-                z.writestr(file_ai,       ai_buf.getvalue())
-                z.writestr(file_iramuteq, corp_buf.getvalue())
+            with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
+                z.writestr(file_clean,  excel_buf.getvalue())
+                z.writestr(file_ai,     ai_buf.getvalue())
+                z.writestr(file_corpus, corp_buf.getvalue())
             zp.seek(0)
 
             st.download_button(
                 "📥 Baixar Resultados (Notícias)",
-                data=zp,
+                data=zp.getvalue(),
                 file_name=f"{base}_noticias.zip"
             )
             st.success("✅ Notícias processadas com sucesso!")
