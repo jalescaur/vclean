@@ -251,20 +251,20 @@ with tab3:
             # ==== novo código 2025-6-27
 
                 if gerar:
-                    # 0) Inicializa barra de progresso
+                    # 0) Cria barra de progresso
                     progress_bar = st.progress(0)
 
                     with st.spinner("Processando relatório quinzenal…"):
-                        # 1) Define nomes de saída
+                        # 1) Define nomes de saída só para exibição (o pipeline já salva os arquivos)
                         base = Path(raw_path).stem
                         if base.endswith("_raw"):
                             base = base[:-4]
+                        file_clean = f"{base}_cleaned.xlsx"
 
-                        file_clean  = f"{base}_cleaned.xlsx"
-                        file_ai     = f"{base}_ai.txt"
-                        file_corpus = f"{base}_corpus.txt"
-
-                        # 2) Executa pipeline principal
+                        # 2) Executa o pipeline principal e captura os paths gerados
+                        #    -> cleaned_path: Path do .xlsx limpo
+                        #    -> macro_txts: list[Path] dos 4 arquivos de macrotema
+                        #    -> iram_txt: Path do arquivo de corpus (_corpus.txt)
                         cleaned_path, macro_txts, iram_txt = full_pipeline(
                             raw_filepath=raw_path,
                             macrotheme_definitions=st.session_state.macros,
@@ -274,23 +274,25 @@ with tab3:
                         # 3) Empacota tudo em um ZIP
                         zp = BytesIO()
                         with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
-                            z.writestr(file_clean,  open(cleaned_path, "rb").read())
-                            z.writestr(file_ai,     open(file_ai,     "rb").read())
-                            z.writestr(file_corpus, open(file_corpus, "rb").read())
+                            # Planilha limpa
+                            z.writestr(Path(cleaned_path).name, open(cleaned_path, "rb").read())
+                            # Macrotemas
                             for p in macro_txts:
                                 z.writestr(Path(p).name, open(p, "rb").read())
-                        zp.seek(0)
+                            # Corpus (IRAMUTEQ)
+                            z.writestr(Path(iram_txt).name, open(iram_txt, "rb").read())
 
-                        # 4) Atualiza progresso para 100%
+                        zp.seek(0)
                         progress_bar.progress(100)
 
-                        # 5) Gera botão de download
+                        # 4) Botão de download
                         st.download_button(
                             "📥 Baixar Relatório Quinzenal",
                             data=zp,
                             file_name=f"{base}_relatorio_quinzenal.zip"
                         )
                         st.success("🎉 Relatório Quinzenal gerado com sucesso!")
+
             # ==== novo código 2025-6-27
 
 # ==== Cleanup temporário ====
