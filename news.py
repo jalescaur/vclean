@@ -1,5 +1,6 @@
 import pandas as pd
 import re
+from pathlib import Path
 
 # === Colunas que não entram no fluxo de Notícias ===
 UNNECESSARY_COLUMNS = [
@@ -62,13 +63,23 @@ def process_and_export_excel(filepath: str, output_filename: str) -> pd.DataFram
     df = df.replace("-", "NA").dropna(axis=1, how="all")
 
     # gera Análise e IRAMUTEQ
-    txt_analysis = output_filename.replace(".xlsx", ".txt")
+    # --- Novo código para definir o nome base sem "_cleaned" --- (2025-6-27)
+    stem = Path(output_filename).stem
+    if stem.endswith("_cleaned"):
+        base = stem[:-len("_cleaned")]
+    else:
+        base = stem
+    # --- Fim do novo código  --- (2025-6-27)
+
+    # 1) Gera arquivo de análise: nome_ai.txt  --- (2025-6-27)
+    txt_analysis = f"{base}_ai.txt"
     df = add_analysis_column_and_export_txt(df, txt_analysis)
 
-    txt_iram = output_filename.replace(".xlsx", "_iramuteq.txt")
-    export_for_iramuteq(df, txt_iram)
+    # 2) Gera arquivo de corpus para IRAMUTEQ: nome_corpus.txt  --- (2025-6-27)
+    corpus_txt = f"{base}_corpus.txt"
+    export_for_iramuteq(df, corpus_txt)
 
-    # salva Excel
+    # 3) Salva o Excel limpo --- (2025-6-27)
     df.to_excel(output_filename, index=False)
     print(f"✅ Excel de Notícias salvo em: {output_filename}")
     return df

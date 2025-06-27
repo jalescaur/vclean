@@ -2,6 +2,7 @@ import pandas as pd
 from datetime import datetime
 import traceback
 import re
+from pathlib import Path
 
 # === Constants ===
 UNNECESSARY_COLUMNS = [
@@ -188,9 +189,23 @@ def process_and_export_excel(filepath, output_filename):
     df = clean_columns_and_values(df_combined)
     df = process_grupos_column(df)
     df = enrich_parlamentar_and_date(df)
-    df = add_analysis_column_and_export_txt(df, txt_filename=output_filename.replace(".xlsx", ".txt"))
-    export_for_iramuteq(df, txt_filename=output_filename.replace(".xlsx", "_iramuteq.txt"))
+    # --- Novo código para definir o nome base sem "_cleaned" --- (2025-6-27)
+    stem = Path(output_filename).stem
+    if stem.endswith("_cleaned"):
+        base = stem[:-len("_cleaned")]
+    else:
+        base = stem
+    # --- Fim do novo código --- (2025-6-27)
 
+    # 1) Gera arquivo de análise: nome_ai.txt --- (2025-6-27)
+    analysis_txt = f"{base}_ai.txt"
+    df = add_analysis_column_and_export_txt(df, txt_filename=analysis_txt)
+
+    # 2) Gera arquivo de corpus para IRAMUTEQ: nome_corpus.txt --- (2025-6-27)
+    corpus_txt = f"{base}_corpus.txt"
+    export_for_iramuteq(df, txt_filename=corpus_txt)
+
+    # 3) Salva o Excel limpo --- (2025-6-27)
     db = df.copy()
     db.to_excel(output_filename, index=False)
     print(f"✅ Banco de dados limpo salvo como: {output_filename}")
