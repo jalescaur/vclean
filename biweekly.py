@@ -182,7 +182,15 @@ def export_macrotheme_txts(df, assignments, macrotheme_definitions, base_name, o
         subset = df[assignments['Macrotema'] == macro]
         if not subset.empty:
             name_part = "_".join([t.lower().replace(" ", "_") for t in tags])
-            full_path = output_dir / f"{base_name}_macro{macro}_{name_part}.txt"
+
+            # === Novo código: sufixo "_macrotema-{n}" === 2025-6-27
+            full_path = output_dir / f"{base_name}_macrotema-{macro}_{name_part}.txt"
+            with open(full_path, "w", encoding="utf-8") as f:
+                subset = df[df["macrotema"] == macro]
+            for text in subset["text"]:
+                f.write(text + "\n")
+            # === Fim do novo código: sufixo "_macrotema-{n}" === 2025-6-27
+            
             subset['Análise'].to_csv(full_path, index=False, header=False, encoding='utf-8')
             output_files.append(full_path)
     return output_files

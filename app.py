@@ -5,7 +5,9 @@ import zipfile
 import time
 import pandas as pd
 from io import BytesIO
+from biweekly import full_pipeline
 from pathlib import Path
+import zipfile
 
 # ==== seus módulos ====
 from daily_posts import (
@@ -189,65 +191,108 @@ with tab3:
         except:
             all_tags = []
 
-        # inicializa session_state
+        # inicializa session_state para macros e confirmação
         if "macros" not in st.session_state:
             st.session_state.macros = {i: [] for i in range(1, 5)}
+        if "macros_confirmed" not in st.session_state:
+            st.session_state.macros_confirmed = False
 
-        # para cada macrotema: 3/4 select + 1/4 botão confirm
-        used = set()  # todas as tags confirmadas até o momento
+        # Multiselects para os 4 macrotemas (sem confirmação individual)
+        cols = st.columns(2)
         for i in range(1, 5):
-            used = set().union(*[tags for idx, tags in st.session_state.macros.items() if idx < i]) \
-                   if not multitema else set()
-            choices = [t for t in all_tags if t not in used or t in st.session_state.macros[i]]
-
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                sel = st.multiselect(
-                    f"Macrotema {i}", 
-                    options=choices, 
-                    default=st.session_state.macros[i],
+            with cols[(i - 1) % 2]:
+                # evita repetição de tags entre os macrotemas (se multitema=False)
+                used = set().union(*[
+                    st.session_state.macros[j] for j in range(1, 5) if j != i
+                ]) if not multitema else set()
+                choices = [t for t in all_tags if t not in used or t in st.session_state.macros.get(i, [])]
+                st.session_state.macros[i] = st.multiselect(
+                    f"Macrotema {i}",
+                    options=choices,
+                    default=st.session_state.macros.get(i, []),
                     key=f"sel_{i}"
                 )
-            with col2:
-                if st.button(f"✅", key=f"confirm_{i}", help=f"Confirmar Macrotema {i}"):
-                    st.session_state.macros[i] = sel
-                    st.success(f"Macrotema {i} salvo: {', '.join(sel) or 'Nenhum'}")
 
-        # botão final
-        if st.button("📊 Gerar Relatório Quinzenal"):
-            progress = st.progress(0, text="⏳ Processando dados…")
-            for pct in (20, 50, 80):
-                time.sleep(0.1)
-                progress.progress(pct)
+        # Botão único para confirmar todos os macros de uma vez
+        if st.button("💾 Confirmar Macrotemas"):
+            st.session_state.macros_confirmed = True
+            st.success("Macrotemas confirmados!")
 
-            file_clean    = f"{base}_cleaned.xlsx"
-            file_ai       = f"{base}_ai.txt"
-            file_iramuteq = f"{base}_corpus.txt"
+        # Pré-visualização dos nomes de arquivo antes de gerar relatório
+        if st.session_state.macros_confirmed:
+            base = Path(raw_path).stem
+            if base.endswith("_raw"):
+                base = base[:-4]
+            st.markdown("**Arquivos que serão gerados:**")
+            preview_files = [
+                f"{base}_cleaned.xlsx",
+                *[
+                    f"{base}_ai_macrotema-{i}_{'_'.join(st.session_state.macros[i]) or 'sem_tags'}.txt"
+                    for i in range(1, 5)
+                ],
+                f"{base}_corpus.txt",
+                f"{base}_relatorio_quinzenal.zip"
+            ]
+            for name in preview_files:
+                st.write(f"- {name}")
 
-            cleaned_path, macro_txts, iram_txt = full_pipeline(
-                raw_filepath           = raw_path,
-                macrotheme_definitions = st.session_state.macros,
-                cleaned_output_filename= file_clean
-            )
+            # Confirmação final para gerar relatório
+            if st.checkbox("✅ Confirmo que está tudo correto", key="confirm_files"):
+                gerar = True
+            else:
+                gerar = False
+        else:
+            gerar = False
 
-            # empacota tudo
-            zp = BytesIO()
-            with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
-                z.writestr(file_clean, open(cleaned_path,    "rb").read())
-                z.writestr(file_ai,    open(file_ai,       "rb").read())
-                z.writestr(file_iramuteq, open(file_iramuteq, "rb").read())
-                for p in macro_txts:
-                    z.writestr(Path(p).name, open(p, "rb").read())
-            zp.seek(0)
-            progress.progress(100)
+        # Gera relatório apenas após confirmação
+        if gerar:
+            with st.spinner("Processando relatório quinzenal…"):
 
-            st.download_button(
-                "📥 Baixar Relatório Quinzenal",
-                data=zp,
-                file_name=f"{base}_relatorio_quinzenal.zip"
-            )
-            st.success("🎉 Relatório Quinzenal gerado com sucesso!")
+            # ==== novo código 2025-6-27
 
-        # cleanup temporário
-        if os.path.exists(raw_path):
-            os.remove(raw_path)
+                if gerar:
+                    # 0) Inicializa barra de progresso
+                    progress_bar = st.progress(0)
+
+                    with st.spinner("Processando relatório quinzenal…"):
+                        # 1) Define nomes de saída
+                        base = Path(raw_path).stem
+                        if base.endswith("_raw"):
+                            base = base[:-4]
+
+                        file_clean  = f"{base}_cleaned.xlsx"
+                        file_ai     = f"{base}_ai.txt"
+                        file_corpus = f"{base}_corpus.txt"
+
+                        # 2) Executa pipeline principal
+                        cleaned_path, macro_txts, iram_txt = full_pipeline(
+                            raw_filepath=raw_path,
+                            macrotheme_definitions=st.session_state.macros,
+                            cleaned_output_filename=file_clean
+                        )
+
+                        # 3) Empacota tudo em um ZIP
+                        zp = BytesIO()
+                        with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
+                            z.writestr(file_clean,  open(cleaned_path, "rb").read())
+                            z.writestr(file_ai,     open(file_ai,     "rb").read())
+                            z.writestr(file_corpus, open(file_corpus, "rb").read())
+                            for p in macro_txts:
+                                z.writestr(Path(p).name, open(p, "rb").read())
+                        zp.seek(0)
+
+                        # 4) Atualiza progresso para 100%
+                        progress_bar.progress(100)
+
+                        # 5) Gera botão de download
+                        st.download_button(
+                            "📥 Baixar Relatório Quinzenal",
+                            data=zp,
+                            file_name=f"{base}_relatorio_quinzenal.zip"
+                        )
+                        st.success("🎉 Relatório Quinzenal gerado com sucesso!")
+            # ==== novo código 2025-6-27
+
+# cleanup temporário
+    if os.path.exists(raw_path):
+        os.remove(raw_path)
