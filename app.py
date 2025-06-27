@@ -293,6 +293,12 @@ with tab3:
                         st.success("🎉 Relatório Quinzenal gerado com sucesso!")
             # ==== novo código 2025-6-27
 
-# cleanup temporário
-    if os.path.exists(raw_path):
+# ==== Cleanup temporário ====
+# Só remove raw_path se ele existir
+if 'raw_path' in locals() and raw_path and os.path.exists(raw_path):
+    try:
         os.remove(raw_path)
+    except Exception as e:
+        # opcional: logar o erro sem quebrar o app
+        st.warning(f"Não foi possível remover o arquivo temporário: {e}")
+
