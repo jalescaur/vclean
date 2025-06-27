@@ -177,22 +177,39 @@ def assign_macrothemes(df, macrotheme_definitions):
     return assignments
 
 def export_macrotheme_txts(df, assignments, macrotheme_definitions, base_name, output_dir):
+    """
+    Gera arquivos .txt de macrotemas:
+    - Conteúdo: linhas de texto ('text') correspondentes a cada macrotema.
+    - Anexos: colunas de Análise no final de cada arquivo.
+    """
     output_files = []
     for macro, tags in macrotheme_definitions.items():
+        # 1) Filtra linhas atribuídas a este macrotema
         subset = df[assignments['Macrotema'] == macro]
-        if not subset.empty:
-            name_part = "_".join([t.lower().replace(" ", "_") for t in tags])
+        if subset.empty:
+            continue
 
-            # === Novo código: sufixo "_macrotema-{n}" === 2025-6-27
-            full_path = output_dir / f"{base_name}_macrotema-{macro}_{name_part}.txt"
-            with open(full_path, "w", encoding="utf-8") as f:
-                subset = df[df["macrotema"] == macro]
-            for text in subset["text"]:
-                f.write(text + "\n")
-            # === Fim do novo código: sufixo "_macrotema-{n}" === 2025-6-27
-            
-            subset['Análise'].to_csv(full_path, index=False, header=False, encoding='utf-8')
-            output_files.append(full_path)
+        # 2) Cria sufixo com tags em minúsculas e underscores
+        #    ou "sem_tags" se não houver tags
+        name_part = "_".join(
+            tag.lower().replace(" ", "_") for tag in tags
+        ) or "sem_tags"
+
+        # 3) Monta caminho: base_macrotema-{n}_{tags}.txt
+        file_path = output_dir / f"{base_name}_macrotema-{macro}_{name_part}.txt"
+
+        # 4) Escreve os textos no arquivo
+        with open(file_path, "w", encoding="utf-8") as f:
+            for txt in subset["text"]:
+                f.write(txt + "\n")
+
+        # 5) Anexa a coluna de Análise (linha a linha)
+        with open(file_path, "a", encoding="utf-8") as f:
+            for analise in subset["Análise"]:
+                f.write(analise + "\n")
+
+        output_files.append(file_path)
+
     return output_files
 
 def create_pivot_summary(df, assignments, macrotheme_definitions):
