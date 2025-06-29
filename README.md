@@ -4,6 +4,8 @@
 
 **V1 |**  You can now effortlessly generate three distinct output files. This includes a meticulously cleaned version of your .xlsx data, a .txt file specifically formatted for use with various generative AI platforms (such as ChatGPT, Gemini, and DeepSeek), and another .txt file tailored for the Iramuteq application. Our primary goal with this update is to eliminate the time-consuming and training-intensive manual formatting process, providing an efficient, automated solution.
 
+**V2 |**  Implement bi-weekly report with tag orientation. As well, it padronises the output names for better organisation.
+
 **TBA**
 
-*V2*, our *next iteration*, will bring significant improvements to the bi-weekly reporting process and advance our classification methodology. We're focusing on making these crucial functions more accurate and efficient.
+Tags otimisation. Better improvements to be identified.
