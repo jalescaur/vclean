@@ -178,65 +178,62 @@ with tab3:
     if not uploaded_bi:
         st.info("⬆️ Por favor, envie um arquivo para iniciar.")
     else:
-        base = os.path.splitext(uploaded_bi.name)[0]
-        # armazena upload em arquivo temporário
+        # 1) PRESERVA o nome original sem extensão
+        input_base = os.path.splitext(uploaded_bi.name)[0]
+
+        # 2) Grava upload em arquivo temporário
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
             tmp.write(uploaded_bi.read())
             raw_path = tmp.name
 
-        # tenta ler sheet Tags
+        # 3) Tenta ler sheet “Tags”
         try:
             df_tags = pd.read_excel(raw_path, sheet_name="Tags", skiprows=4)
             all_tags = df_tags.columns.tolist()
         except:
             all_tags = []
 
-        # inicializa session_state para macros e confirmação
+        # 4) Inicializa session_state
         if "macros" not in st.session_state:
             st.session_state.macros = {i: [] for i in range(1, 5)}
         if "macros_confirmed" not in st.session_state:
             st.session_state.macros_confirmed = False
 
-        # Multiselects para os 4 macrotemas (sem confirmação individual)
+        # 5) Multiselects para os 4 macrotemas
         cols = st.columns(2)
         for i in range(1, 5):
             with cols[(i - 1) % 2]:
-                # evita repetição de tags entre os macrotemas (se multitema=False)
                 used = set().union(*[
                     st.session_state.macros[j] for j in range(1, 5) if j != i
                 ]) if not multitema else set()
-                choices = [t for t in all_tags if t not in used or t in st.session_state.macros.get(i, [])]
+                choices = [t for t in all_tags if t not in used or t in st.session_state.macros[i]]
                 st.session_state.macros[i] = st.multiselect(
                     f"Macrotema {i}",
                     options=choices,
-                    default=st.session_state.macros.get(i, []),
+                    default=st.session_state.macros[i],
                     key=f"sel_{i}"
                 )
 
-        # Botão único para confirmar todos os macros de uma vez
+        # 6) Botão único para confirmar todos os macros
         if st.button("💾 Confirmar Macrotemas"):
             st.session_state.macros_confirmed = True
             st.success("Macrotemas confirmados!")
 
-        # Pré-visualização dos nomes de arquivo antes de gerar relatório
+        # 7) Pré-visualização usando input_base
         if st.session_state.macros_confirmed:
-            base = Path(raw_path).stem
-            if base.endswith("_raw"):
-                base = base[:-4]
             st.markdown("**Arquivos que serão gerados:**")
             preview_files = [
-                f"{base}_cleaned.xlsx",
+                f"{input_base}_cleaned.xlsx",
                 *[
-                    f"{base}_ai_macrotema-{i}_{'_'.join(st.session_state.macros[i]) or 'sem_tags'}.txt"
+                    f"{input_base}_ai_macrotema-{i}_{'_'.join(st.session_state.macros[i]) or 'sem_tags'}.txt"
                     for i in range(1, 5)
                 ],
-                f"{base}_corpus.txt",
-                f"{base}_relatorio_quinzenal.zip"
+                f"{input_base}_corpus.txt",
+                f"{input_base}_relatorio_quinzenal.zip"
             ]
             for name in preview_files:
                 st.write(f"- {name}")
 
-            # Confirmação final para gerar relatório
             if st.checkbox("✅ Confirmo que está tudo correto", key="confirm_files"):
                 gerar = True
             else:
@@ -244,63 +241,48 @@ with tab3:
         else:
             gerar = False
 
-        # Gera relatório apenas após confirmação
+        # 8) Gera relatório apenas após confirmação
         if gerar:
+            progress_bar = st.progress(0)
             with st.spinner("Processando relatório quinzenal…"):
+                # (a) Define o nome do Excel limpo
+                file_clean = f"{input_base}_cleaned.xlsx"
 
-            # ==== novo código 2025-6-27
+                # (b) Executa pipeline e captura paths reais
+                cleaned_path, macro_txts, iram_txt = full_pipeline(
+                    raw_filepath=raw_path,
+                    macrotheme_definitions=st.session_state.macros,
+                    cleaned_output_filename=file_clean
+                )
 
-                if gerar:
-                    # 0) Cria barra de progresso
-                    progress_bar = st.progress(0)
+                # (c) Empacota tudo num ZIP
+                zp = BytesIO()
+                with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
+                    # planilha
+                    z.writestr(Path(cleaned_path).name,
+                               open(cleaned_path, "rb").read())
+                    # macrotemas
+                    for p in macro_txts:
+                        z.writestr(Path(p).name, open(p, "rb").read())
+                    # corpus
+                    z.writestr(Path(iram_txt).name,
+                               open(iram_txt, "rb").read())
+                zp.seek(0)
 
-                    with st.spinner("Processando relatório quinzenal…"):
-                        # 1) Define nomes de saída só para exibição (o pipeline já salva os arquivos)
-                        base = Path(raw_path).stem
-                        if base.endswith("_raw"):
-                            base = base[:-4]
-                        file_clean = f"{base}_cleaned.xlsx"
+                progress_bar.progress(100)
 
-                        # 2) Executa o pipeline principal e captura os paths gerados
-                        #    -> cleaned_path: Path do .xlsx limpo
-                        #    -> macro_txts: list[Path] dos 4 arquivos de macrotema
-                        #    -> iram_txt: Path do arquivo de corpus (_corpus.txt)
-                        cleaned_path, macro_txts, iram_txt = full_pipeline(
-                            raw_filepath=raw_path,
-                            macrotheme_definitions=st.session_state.macros,
-                            cleaned_output_filename=file_clean
-                        )
+                # (d) Botão de download com input_base
+                st.download_button(
+                    "📥 Baixar Relatório Quinzenal",
+                    data=zp,
+                    file_name=f"{input_base}_relatorio_quinzenal.zip"
+                )
+                st.success("🎉 Relatório Quinzenal gerado com sucesso!")
 
-                        # 3) Empacota tudo em um ZIP
-                        zp = BytesIO()
-                        with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
-                            # Planilha limpa
-                            z.writestr(Path(cleaned_path).name, open(cleaned_path, "rb").read())
-                            # Macrotemas
-                            for p in macro_txts:
-                                z.writestr(Path(p).name, open(p, "rb").read())
-                            # Corpus (IRAMUTEQ)
-                            z.writestr(Path(iram_txt).name, open(iram_txt, "rb").read())
-
-                        zp.seek(0)
-                        progress_bar.progress(100)
-
-                        # 4) Botão de download
-                        st.download_button(
-                            "📥 Baixar Relatório Quinzenal",
-                            data=zp,
-                            file_name=f"{base}_relatorio_quinzenal.zip"
-                        )
-                        st.success("🎉 Relatório Quinzenal gerado com sucesso!")
-
-            # ==== novo código 2025-6-27
-
-# ==== Cleanup temporário ====
-# Só remove raw_path se ele existir
+# — Cleanup temporário (mantém o guard que evita NameError) —
 if 'raw_path' in locals() and raw_path and os.path.exists(raw_path):
     try:
         os.remove(raw_path)
     except Exception as e:
-        # opcional: logar o erro sem quebrar o app
         st.warning(f"Não foi possível remover o arquivo temporário: {e}")
 
