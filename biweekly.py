@@ -1,7 +1,9 @@
+# === Full clean.py with Fix for 'Análise' Column and Macrotheme Processing ===
+
 import pandas as pd
-from datetime import datetime
-import traceback
 import re
+from pathlib import Path
+import traceback
 
 # === Constants ===
 UNNECESSARY_COLUMNS = [
@@ -25,8 +27,8 @@ ENGAGEMENT_COLS = [
 
 LIST_CASA = ["CÂMARA", "SENADO"]
 LIST_PARTIDO = ["MDB", "PT", "PRD", "PP", "PSDB", "PDT", "UNIÃO", "PL", "PODEMOS", "PSB", "REPUBLICANOS",
-                 "PV", "AVANTE", "PSC", "PSOL", "PCDOB", "PSD", "SOLIDARIEDADE", "NOVO", "REDE", "PMB",
-                 "UP", "DC", "PCO", "PSTU", "PCB", "PRTB", "MOBILIZA", "AGIR", "CIDADANIA", "PROS", "PATRIOTA"]
+                "PV", "AVANTE", "PSC", "PSOL", "PCDOB", "PSD", "SOLIDARIEDADE", "NOVO", "REDE", "PMB",
+                "UP", "DC", "PCO", "PSTU", "PCB", "PRTB", "MOBILIZA", "AGIR", "CIDADANIA", "PROS", "PATRIOTA"]
 LIST_ESTADO = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB",
                 "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"]
 
@@ -41,11 +43,12 @@ SPECIFIC_OVERRIDES = {
     "Yury do Paredão": {"Partido": "MDB", "Estado": "CE"}
 }
 
-# === Utility Function for IRAMUTEQ ===
-def export_for_iramuteq(df, txt_filename):
-    def clean_description(text):
-        return re.sub(r'[\|:\*"\?<>\|\$\-\'%]', '', str(text))
+# === Helper Functions ===
 
+def clean_description(text):
+    return re.sub(r'[\|:\*"<>\$\-\'%]', '', str(text))
+
+def export_iramuteq(df, output_path):
     lines = []
     for _, row in df.iterrows():
         id_val = row.get("ID", "")
@@ -53,12 +56,9 @@ def export_for_iramuteq(df, txt_filename):
         descricao = clean_description(row.get("Descrição", ""))
         lines.append(f"**** *id_{id_val} *u_{nome}\n{descricao}\n")
 
-    with open(txt_filename, "w", encoding="utf-8") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         f.writelines(lines)
 
-    print(f"🧾 Arquivo IRAMUTEQ salvo como: {txt_filename}")
-
-# === Core functions ===
 def load_and_clean_sheet(filepath, sheet_name, is_main=True):
     df = pd.read_excel(filepath, sheet_name=sheet_name, skiprows=4)
     df.columns = df.columns.str.replace('"', '').str.strip()
@@ -67,7 +67,6 @@ def load_and_clean_sheet(filepath, sheet_name, is_main=True):
     return df
 
 def clean_columns_and_values(df):
-    # Sum "Manifestações reais" before dropping engagement columns
     engagement_present = [col for col in ENGAGEMENT_COLS if col in df.columns]
     if engagement_present:
         df["Manifestações reais"] = df[engagement_present].apply(pd.to_numeric, errors='coerce').sum(axis=1)
@@ -115,7 +114,6 @@ def process_grupos_column(df):
             for key, value in overrides.items():
                 df.loc[mask, key] = value
 
-    # Drop columns if all values are null
     for col in ['Casa', 'Partido', 'Estado']:
         if col in df.columns and df[col].isnull().all():
             df = df.drop(columns=[col])
@@ -149,49 +147,181 @@ def enrich_parlamentar_and_date(df):
 
     return df
 
-def add_analysis_column_and_export_txt(df, txt_filename):
+def add_analysis_column(df):
     for col in ['ID', 'Descrição', 'Manifestações', 'Link ocorrência']:
         if col not in df.columns:
             df[col] = ""
-
     df["Análise"] = (
         "ID: " + df["ID"].astype(str) +
         " | Texto: " + df["Descrição"].astype(str) +
         " | Engajamento: " + df["Manifestações"].astype(str) +
         " | Link: " + df["Link ocorrência"].astype(str)
     )
-
-    df["Análise"].to_csv(txt_filename, index=False, header=False)
-    print(f"📝 Arquivo .txt salvo como: {txt_filename}")
     return df
 
-def process_and_export_excel(filepath, output_filename):
-    print(f"📂 Processando arquivo: {filepath}")
+# === Full Pipeline to Process, Export, and Save ===
 
-    df_main = load_and_clean_sheet(filepath, sheet_name="Ocorrências", is_main=True)
-    df_main = df_main.reset_index(drop=True)
-    df_combined = df_main.copy()
+def get_macrotheme_names(macrotheme_definitions):
+    macrotheme_names = {}
+    for macro, tags in macrotheme_definitions.items():
+        name = " + ".join(tags)
+        macrotheme_names[macro] = name
+    return macrotheme_names
+
+def assign_macrothemes(df, macrotheme_definitions):
+    tag_columns = [col for col in df.columns if col not in df.columns[:df.columns.get_loc('Serviço')+1]]
+    assignments = pd.DataFrame(0, index=df.index, columns=['Macrotema'])
+    for macro, tags in macrotheme_definitions.items():
+        mask = df[tags].sum(axis=1) > 0
+        assignments.loc[mask, 'Macrotema'] = macro
+    return assignments
+
+def export_macrotheme_txts(df, assignments, macrotheme_definitions, base_name, output_dir):
+    """
+    Gera arquivos .txt de macrotemas:
+      • Usa as linhas de 'Análise' de cada macrotema.
+      • Nomeia como: {base_name}_macrotema-{n}_{tags ou sem_tags}.txt
+    """
+    output_files = []
+    # assignments: DataFrame com coluna 'Macrotema' (número do tema)
+    for macro, tags in macrotheme_definitions.items():
+        # 1) Filtra as linhas atribuídas a este macrotema
+        subset = df[assignments['Macrotema'] == macro]
+        if subset.empty:
+            continue
+
+        # 2) Prepara sufixo de tags (underscore, minúsculas) ou 'sem_tags'
+        name_part = "_".join(
+            tag.lower().replace(" ", "_") for tag in tags
+        ) or "sem_tags"
+
+        # 3) Monta o caminho final
+        file_path = output_dir / f"{base_name}_macrotema-{macro}_{name_part}.txt"
+
+        # 4) Escreve cada linha de Análise no arquivo
+        with open(file_path, "w", encoding="utf-8") as f:
+            for line in subset["Análise"]:
+                f.write(line + "\n")
+
+        output_files.append(file_path)
+
+    return output_files
+
+
+def create_pivot_summary(df, assignments, macrotheme_definitions):
+    df['Macrotema'] = assignments['Macrotema']
+
+    # Total number of posts in the database
+    total_posts = df.shape[0]
+
+    # Get names for macrothemes
+    macrotheme_names = get_macrotheme_names(macrotheme_definitions)
+
+    # Map numbers to names
+    df['Macrotema Nome'] = df['Macrotema'].map(macrotheme_names)
+    df['Macrotema Nome'] = df['Macrotema Nome'].fillna('Sem Macrotema')
+
+    # Create pivot
+    summary = df.groupby(['Ano', 'Mês', 'Dia', 'Macrotema Nome']).agg(
+        Total_Publicações=('ID', 'count'),
+        Total_Engajamento=('Manifestações reais', 'sum')
+    ).reset_index()
+
+    # Sort
+    summary = summary.sort_values(['Mês', 'Dia'])
+
+    return summary, total_posts
+
+def create_microtheme_percentage(df, assignments):
+    df['Macrotema'] = assignments['Macrotema']
+    themes_cols = [col for col in df.columns if col not in df.columns[:df.columns.get_loc('Serviço')+1]]
+
+    numeric_df = df[themes_cols].apply(pd.to_numeric, errors='coerce')
+
+    percentages = numeric_df.groupby(df['Macrotema']).mean() * 100
+    percentages = percentages.round(2)
+    return percentages
+
+def create_relative_frequency_summary(df, assignments, macrotheme_definitions, total_posts):
+    df['Macrotema'] = assignments['Macrotema']
+
+    macrotheme_names = get_macrotheme_names(macrotheme_definitions)
+
+    df['Macrotema Nome'] = df['Macrotema'].map(macrotheme_names)
+    df['Macrotema Nome'] = df['Macrotema Nome'].fillna('Sem Macrotema')
+
+    # Macrotheme Relative Frequency
+    macro_counts = df['Macrotema Nome'].value_counts(normalize=True) * 100
+    macro_freq = macro_counts.round(2).reset_index()
+    macro_freq.columns = ['Macrotema', 'Frequência Relativa (%)']
+
+    # Microtheme Relative Frequency
+    themes_cols = df.columns[df.columns.get_loc('Serviço') + 1:]
+    valid_theme_cols = [col for col in themes_cols if set(df[col].dropna().unique()).issubset({0, 1})]
+    numeric_df = df[valid_theme_cols].apply(pd.to_numeric, errors='coerce')
+    microtheme_freq = numeric_df.sum() / total_posts
+    microtheme_freq = microtheme_freq.round(4).reset_index()
+    microtheme_freq.columns = ['Microtema', 'Frequência Relativa']
+
+    return macro_freq, microtheme_freq
+
+def full_pipeline(raw_filepath, macrotheme_definitions, cleaned_output_filename):
+    raw_path = Path(raw_filepath)
+    cleaned_path = raw_path.parent / cleaned_output_filename
+
+    df_main = load_and_clean_sheet(raw_path, sheet_name="Ocorrências", is_main=True)
 
     try:
-        df_tags = load_and_clean_sheet(filepath, sheet_name="Tags", is_main=False)
-        df_tags = df_tags.reset_index(drop=True)
+        df_tags = load_and_clean_sheet(raw_path, sheet_name="Tags", is_main=False)
         tag_fallback = pd.DataFrame(0, index=range(len(df_main)), columns=df_tags.columns)
         df_tags = df_tags.applymap(lambda x: 1 if str(x).strip().upper() == "SIM" else 0)
         rows_to_fill = min(len(df_tags), len(tag_fallback))
         tag_fallback.iloc[:rows_to_fill] = df_tags.iloc[:rows_to_fill]
         df_combined = pd.concat([df_main, tag_fallback], axis=1)
-        print("✅ Tags processadas linha a linha com fallback zero.")
-    except Exception as e:
-        print("⚠️ Aba 'Tags' não encontrada ou erro ao carregar:", str(e))
+    except Exception:
         traceback.print_exc()
+        df_combined = df_main.copy()
 
     df = clean_columns_and_values(df_combined)
     df = process_grupos_column(df)
     df = enrich_parlamentar_and_date(df)
-    df = add_analysis_column_and_export_txt(df, txt_filename=output_filename.replace(".xlsx", ".txt"))
-    export_for_iramuteq(df, txt_filename=output_filename.replace(".xlsx", "_iramuteq.txt"))
+    df = add_analysis_column(df)
 
-    db = df.copy()
-    db.to_excel(output_filename, index=False)
-    print(f"✅ Banco de dados limpo salvo como: {output_filename}")
-    return db
+    assignments = assign_macrothemes(df, macrotheme_definitions)
+
+    # Export final Excel with pivots
+    with pd.ExcelWriter(cleaned_path, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name='Cleaned Data')
+        pivot_summary, total_posts = create_pivot_summary(df, assignments, macrotheme_definitions)
+        pivot_summary.to_excel(writer, index=False, sheet_name='pvt_summary')
+        macro_freq, microtheme_freq = create_relative_frequency_summary(
+            df, assignments, macrotheme_definitions, total_posts
+        )
+        macro_freq.to_excel(writer, index=False, sheet_name='macro_freq')
+        microtheme_freq.to_excel(writer, index=False, sheet_name='microtheme_freq')
+
+    # --- Novo código para definir o prefixo base sem "_cleaned" ---
+    stem = cleaned_path.stem
+    if stem.endswith("_cleaned"):
+        clean_base = stem[:-len("_cleaned")]
+    else:
+        clean_base = stem
+
+    # Prefixo para arquivos de macrotema com sufixo "_ai"
+    ai_macro_base = f"{clean_base}_ai"
+    # --- Fim do novo código ---
+
+    # Export macrotheme .txt usando o novo base_name (inclui "_ai")
+    output_txts = export_macrotheme_txts(
+        df,
+        assignments,
+        macrotheme_definitions,
+        base_name=ai_macro_base,           # <— aqui usamos {base}_ai
+        output_dir=cleaned_path.parent
+    )
+
+    # Export Iramuteq .txt com sufixo "_corpus.txt"
+    iramuteq_txt_path = cleaned_path.parent / f"{clean_base}_corpus.txt"
+    export_iramuteq(df, iramuteq_txt_path)
+
+    return cleaned_path, output_txts, iramuteq_txt_path
