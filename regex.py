@@ -1,4 +1,6 @@
+# regex.py
 import re
+from wordcloud_utils import STOPWORDS
 
 def clean_text(text):
     """
@@ -7,8 +9,8 @@ def clean_text(text):
     regex = r'''(?ix)
         (?<!\w)
         (
-            (k){3,}                # kkkk, kkkkkk
-            |(ha){2,}              # hahaha, hahahaha
+            (k){1,}                # kkkk, kkkkkk
+            |(ha){1,}              # hahaha, hahahaha
             |(h[ae]{1,2}){2,}      # hehehe, huehue, hahaha
             |(rs){2,}              # rsrsrs
             |(ua){2,}              # uaua, uauaua
@@ -17,11 +19,13 @@ def clean_text(text):
     '''
     return re.sub(regex, '', text).strip()
 
-def remove_palavras_curtas(texto: str, tamanho_minimo: int = 4) -> str:
+def preprocessar_texto(texto: str, tamanho_minimo: int = 4) -> str:
     """
-    Remove palavras com menos de `tamanho_minimo` letras.
+    Limpa risadas, remove palavras curtas e palavras da stoplist.
     """
+    texto_limpo = clean_text(texto)
+    palavras = re.findall(r'\b\w+\b', texto_limpo)
     return " ".join([
-        w for w in re.findall(r'\b\w+\b', texto)
-        if len(w) >= tamanho_minimo
+        w for w in palavras
+        if len(w) >= tamanho_minimo and w.upper() not in STOPWORDS
     ])
