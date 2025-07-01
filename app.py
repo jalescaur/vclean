@@ -6,7 +6,6 @@ import time
 import pandas as pd
 from io import BytesIO
 from pathlib import Path
-import tempfile
 
 # === Seus módulos ===
 from daily_posts import (
@@ -21,6 +20,9 @@ from biweekly import full_pipeline  # biweekly.py
 
 # ← ADICIONADO: import da função de nuvem
 from utils.wordcloud_utils import generate_wordcloud
+
+# Importa a função de limpeza de texto
+from regex import clean_text
 
 # ==== Configuração da página ====
 st.set_page_config(
@@ -119,11 +121,15 @@ with tab1:
                 z.writestr(file_corpus, corp_buf.getvalue())
 
                 # ← ADICIONADO: Gera e adiciona a nuvem de Publicações
-                cloud_pub = f"{base}_publicacoes_cloud.png"
+                cloud_pub = f"{base}_cloud.png"
                 texto_pub = open(file_ai, "r", encoding="utf-8").read() + "\n" + \
                             open(file_corpus, "r", encoding="utf-8").read()
+
+                # Aplicar a limpeza de texto usando a função importada
+                texto_pub_limpo = clean_text(texto_pub)
+
                 generate_wordcloud(
-                    text=texto_pub,
+                    text=texto_pub_limpo,
                     output_path=cloud_pub,
                     width=width, height=height
                 )
@@ -180,8 +186,12 @@ with tab2:
                 cloud_news = f"{base}_noticias_cloud.png"
                 texto_news = open(file_ai, "r", encoding="utf-8").read() + "\n" + \
                              open(file_corpus, "r", encoding="utf-8").read()
+                
+                # Aplicar a limpeza de texto usando a função importada
+                texto_news_limpo = clean_text(texto_news)
+
                 generate_wordcloud(
-                    text=texto_news,
+                    text=texto_news_limpo,
                     output_path=cloud_news,
                     width=width, height=height
                 )
@@ -249,9 +259,11 @@ with tab3:
                     # nuvens de macrotema
                     for p in macro_txts:
                         txt = open(p, "r", encoding="utf-8").read()
+                        txt_limpo = clean_text(txt)  # Aplicar REGEX para limpar o texto
                         cloud_mt = f"{Path(p).stem}.png"
+                        
                         generate_wordcloud(
-                            text=txt,
+                            text=txt_limpo,
                             output_path=cloud_mt,
                             width=width, height=height
                         )
@@ -259,9 +271,11 @@ with tab3:
 
                     # nuvem geral (corpus)
                     geral_txt = open(iram_txt, "r", encoding="utf-8").read()
+                    geral_txt_limpo = clean_text(geral_txt)  # Aplicar REGEX para limpar o texto
                     cloud_geral = f"{input_base}_geral.png"
+
                     generate_wordcloud(
-                        text=geral_txt,
+                        text=geral_txt_limpo,
                         output_path=cloud_geral,
                         width=width, height=height
                     )
