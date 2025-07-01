@@ -24,6 +24,7 @@ from utils.wordcloud_utils import generate_wordcloud
 
 # Importa a função de limpeza de texto
 from regex import clean_text
+from regex import remove_palavras_curtas
 
 # ==== Configuração da página ====
 st.set_page_config(
@@ -128,6 +129,7 @@ with tab1:
 
                 # Aplicar a limpeza de texto usando a função importada
                 texto_pub_limpo = clean_text(texto_pub)
+                texto_pub_limpo = remove_palavras_curtas(texto_pub_limpo, tamanho_minimo=4)
 
                 generate_wordcloud(
                     text=texto_pub_limpo,
@@ -190,6 +192,7 @@ with tab2:
                 
                 # Aplicar a limpeza de texto usando a função importada
                 texto_news_limpo = clean_text(texto_news)
+                texto_news_limpo = remove_palavras_curtas(texto_news_limpo, tamanho_minimo=4)
 
                 generate_wordcloud(
                     text=texto_news_limpo,
@@ -261,6 +264,7 @@ with tab3:
                     for p in macro_txts:
                         txt = open(p, "r", encoding="utf-8").read()
                         txt_limpo = clean_text(txt)  # Aplicar REGEX para limpar o texto
+                        txt_limpo = remove_palavras_curtas(txt_limpo, tamanho_minimo=4)  # << ADICIONADO MAIS REGEX
                         cloud_mt = f"{Path(p).stem}.png"
                         
                         generate_wordcloud(
@@ -273,6 +277,7 @@ with tab3:
                     # nuvem geral (corpus)
                     geral_txt = open(iram_txt, "r", encoding="utf-8").read()
                     geral_txt_limpo = clean_text(geral_txt)  # Aplicar REGEX para limpar o texto
+                    geral_txt_limpo = remove_palavras_curtas(geral_txt_limpo, tamanho_minimo=4)  # << ADICIONADO MAIS REGEX
                     cloud_geral = f"{input_base}_geral.png"
 
                     generate_wordcloud(

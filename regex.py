@@ -2,23 +2,26 @@ import re
 
 def clean_text(text):
     """
-    Função para remover risadas do texto.
+    Remove risadas do texto, como 'kkkk', 'hahaha', 'huahuahua', etc.
     """
     regex = r'''(?ix)
         (?<!\w)
-        \b
         (
-            k{4,}                                     # pelo menos 4 'k'
-            |hah?a+h?a+                               # risadas tipo 'haha'
-            |[a-z]{0,}[hku][ae][a-z]{2,}              # sons tipo 'hue', 'kae', com pelo menos 4 caracteres
-            |[a-z]{4,}                                # qualquer palavra com 4+ letras
-            |[a-zA-Z][áéíóúàèìòùâêîôûãõäëïöüñç]       # letras com acento
-            |[áéíóúàèìòùâêîôûãõäëïöüñç]{2,}           # acentuadas com mínimo 2 caracteres
-            |\b[a-zA-Z]\d{3,}                         # letra seguida de 3+ números
-            |\b\d{3,}[a-zA-Z]                         # número seguido de letra
+            (k){3,}                # kkkk, kkkkkk
+            |(ha){2,}              # hahaha, hahahaha
+            |(h[ae]{1,2}){2,}      # hehehe, huehue, hahaha
+            |(rs){2,}              # rsrsrs
+            |(ua){2,}              # uaua, uauaua
         )
-        \b
         (?!\w)
     '''
-    return re.sub(regex, '', text)
+    return re.sub(regex, '', text).strip()
 
+def remove_palavras_curtas(texto: str, tamanho_minimo: int = 4) -> str:
+    """
+    Remove palavras com menos de `tamanho_minimo` letras.
+    """
+    return " ".join([
+        w for w in re.findall(r'\b\w+\b', texto)
+        if len(w) >= tamanho_minimo
+    ])
