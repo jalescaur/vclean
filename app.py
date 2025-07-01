@@ -6,6 +6,7 @@ import time
 import pandas as pd
 from io import BytesIO
 from pathlib import Path
+import re
 
 # === Seus módulos ===
 from daily_posts import (
