@@ -23,3 +23,7 @@ vsf
 cu
 pika
 mamar
+cadela
+putona
+puto
+putão
