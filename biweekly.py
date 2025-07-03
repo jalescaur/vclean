@@ -4,6 +4,8 @@ import pandas as pd
 import re
 from pathlib import Path
 import traceback
+import os
+from utils.plot_utils import generate_biweekly_dual_axis_chart
 
 # === Constants ===
 UNNECESSARY_COLUMNS = [
@@ -265,7 +267,7 @@ def create_relative_frequency_summary(df, assignments, macrotheme_definitions, t
 
     return macro_freq, microtheme_freq
 
-def full_pipeline(raw_filepath, macrotheme_definitions, cleaned_output_filename):
+def full_pipeline(raw_filepath, macrotheme_definitions, cleaned_output_filename, width, height):
     raw_path = Path(raw_filepath)
     cleaned_path = raw_path.parent / cleaned_output_filename
 
@@ -300,6 +302,21 @@ def full_pipeline(raw_filepath, macrotheme_definitions, cleaned_output_filename)
         macro_freq.to_excel(writer, index=False, sheet_name='macro_freq')
         microtheme_freq.to_excel(writer, index=False, sheet_name='microtheme_freq')
 
+    # ——— Gera o gráfico quinzenal transparente ——— (2025-7-3)
+    # usa o pivot_summary já criado acima
+    output_dir = cleaned_path.parent
+    os.makedirs(output_dir, exist_ok=True)
+
+    png_biweekly = output_dir / f"{clean_base}_vol.png"
+    # pivot_summary vem do create_pivot_summary
+    generate_biweekly_dual_axis_chart(
+        pivot_summary,
+        str(png_biweekly),
+        width,
+        height
+    )
+    print(f"🖼️ Gráfico quinzenal salvo como: {png_biweekly}")
+
     # --- Novo código para definir o prefixo base sem "_cleaned" ---
     stem = cleaned_path.stem
     if stem.endswith("_cleaned"):
@@ -324,4 +341,4 @@ def full_pipeline(raw_filepath, macrotheme_definitions, cleaned_output_filename)
     iramuteq_txt_path = cleaned_path.parent / f"{clean_base}_corpus.txt"
     export_iramuteq(df, iramuteq_txt_path)
 
-    return cleaned_path, output_txts, iramuteq_txt_path
+    return cleaned_path, output_txts, iramuteq_txt_path, png_biweekly

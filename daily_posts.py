@@ -3,6 +3,8 @@ from datetime import datetime
 import traceback
 import re
 from pathlib import Path
+import os
+from utils.plot_utils import generate_daily_volume_chart
 
 # === Constants ===
 UNNECESSARY_COLUMNS = [
@@ -166,7 +168,7 @@ def add_analysis_column_and_export_txt(df, txt_filename):
     print(f"📝 Arquivo .txt salvo como: {txt_filename}")
     return df
 
-def process_and_export_excel(filepath, output_filename):
+def process_and_export_excel(filepath, output_filename, width, height): #add width, height (2025-7-3)
     print(f"📂 Processando arquivo: {filepath}")
 
     df_main = load_and_clean_sheet(filepath, sheet_name="Ocorrências", is_main=True)
@@ -209,4 +211,15 @@ def process_and_export_excel(filepath, output_filename):
     db = df.copy()
     db.to_excel(output_filename, index=False)
     print(f"✅ Banco de dados limpo salvo como: {output_filename}")
-    return db
+
+    # 4) ——— Gera o PNG de volumetria diária ———  (INSERIDO 2025-7-3)
+    # define pasta de saída a partir do output_filename
+    output_dir = os.path.dirname(output_filename) or "."
+    # monta nome do arquivo .png
+    png_daily = os.path.join(output_dir, f"{base}_vol.png")
+    # chama a função do utils/plot_utils
+    generate_daily_volume_chart(db, png_daily, width, height)
+    print(f"🖼️ Gráfico diário salvo como: {png_daily}")
+
+    # 5) retorna o DataFrame e o caminho do PNG
+    return db, png_daily  # ③

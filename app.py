@@ -25,6 +25,10 @@ from utils.wordcloud_utils import generate_wordcloud
 # Importa a função de limpeza de texto
 from regex import preprocessar_texto
 
+# IMPORTA FUNÇÃO DE GRÁFICO DE VOLUMETRIA
+
+from utils.plot_utils import generate_daily_volume_chart
+
 # ==== Configuração da página ====
 st.set_page_config(
     page_title="📊 V-Tracker: Data Cleaning & Analysis",
@@ -73,6 +77,18 @@ size_map = {
 }
 width, height = size_map[size_label]
 
+# ← ADICIONADO: volumetria
+st.sidebar.header('Tamanho dos Gráficos')
+size_opt = st.sidebar.selectbox(
+    'Escolha um tamanho de gráfico:',
+    ['Diário (2475×1885)', 'Relatório (3780×1522)']
+)
+size_map = {
+    'Diário (2475×1885)':  (2475, 1885),
+    'Relatório (3780×1522)': (3780, 1522),
+}
+width, height = size_map[size_opt]  # ②
+
 # ==== Abas ====
 tab1, tab2, tab3 = st.tabs([
     "📱 Publicações", 
@@ -101,6 +117,10 @@ with tab1:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
                 tmp.write(uploaded_pub.read())
                 tmp_path = tmp.name
+
+
+               # ===== NOVO 2025-7-3
+                
             df = process_publicacoes(tmp_path, output_filename=file_clean)
             analysis_publicacoes(df.copy(), txt_filename=file_ai)
             old_iram = file_clean.replace(".xlsx", "_iramuteq.txt")
@@ -118,8 +138,6 @@ with tab1:
             with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
                 # arquivos originais
                 z.writestr(file_clean,  excel_buf.getvalue())
-                z.writestr(file_ai,     ai_buf.getvalue())
-                z.writestr(file_corpus, corp_buf.getvalue())
 
                 # ← ADICIONADO: Gera e adiciona a nuvem de Publicações
                 cloud_pub = f"{base}_cloud.png"
@@ -238,49 +256,47 @@ with tab3:
 
                     input_base = os.path.splitext(uploaded_bi.name)[0]
                     # agora raw_path está definido
-                    cleaned_path, macro_txts, iram_txt = full_pipeline(
+
+                # ④ full_pipeline agora recebe width,height e retorna png_biweekly
+                    cleaned_path, macro_txts, iram_txt, png_biweekly = full_pipeline(
                         raw_filepath=raw_path,
                         macrotheme_definitions=st.session_state.macros,
-                        cleaned_output_filename=f"{input_base}_cleaned.xlsx"
+                        cleaned_output_filename=f"{input_base}_cleaned.xlsx",
+                        width=width,
+                        height=height
                     )
+
 
                 # ← ADICIONADO: prepara ZIP com todos os itens + nuvens
-                zp = BytesIO()
-                with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
-                    # planilha limpa
-                    z.writestr(Path(cleaned_path).name,
-                               open(cleaned_path, "rb").read())
-                    # cada macrotema .txt
-                    for p in macro_txts:
-                        z.writestr(Path(p).name, open(p, "rb").read())
-                    # corpus geral
-                    z.writestr(Path(iram_txt).name,
-                               open(iram_txt, "rb").read())
+            zp = BytesIO()
+            with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
+                # a) planilha e macro .txts e corpus
+                z.writestr(Path(cleaned_path).name, open(cleaned_path, "rb").read())
+                for p in macro_txts:
+                    z.writestr(Path(p).name, open(p, "rb").read())
+                z.writestr(Path(iram_txt).name, open(iram_txt, "rb").read())
 
-                    # nuvens de macrotema
-                    for p in macro_txts:
-                        txt = open(p, "r", encoding="utf-8").read()
-                        txt_limpo = preprocessar_texto(txt) # <--- REGEX
-                        cloud_mt = f"{Path(p).stem}.png"
-                        
-                        generate_wordcloud(
-                            text=txt_limpo,
-                            output_path=cloud_mt,
-                            width=width, height=height
-                        )
-                        z.write(cloud_mt, arcname=cloud_mt)
+                # b) gráfico de volumetria quinzenal
+                z.write(png_biweekly, arcname="biweekly_volume_chart.png")
 
-                    # nuvem geral (corpus)
-                    geral_txt = open(iram_txt, "r", encoding="utf-8").read()
-                    geral_txt_limpo = preprocessar_texto(geral_txt) # <--- REGEX
-                    cloud_geral = f"{input_base}_geral.png"
+                # c) nuvens de cada macrotema
+                for p in macro_txts:
+                    txt = open(p, "r", encoding="utf-8").read()
+                    txt_limpo = preprocessar_texto(txt)
+                    cloud_mt = f"{Path(p).stem}.png"
+                    generate_wordcloud(text=txt_limpo,
+                                    output_path=cloud_mt,
+                                    width=width, height=height)
+                    z.write(cloud_mt, arcname=cloud_mt)
 
-                    generate_wordcloud(
-                        text=geral_txt_limpo,
-                        output_path=cloud_geral,
-                        width=width, height=height
-                    )
-                    z.write(cloud_geral, arcname=cloud_geral)
+                # d) nuvem geral (corpus)
+                geral_txt = open(iram_txt, "r", encoding="utf-8").read()
+                geral_txt_limpo = preprocessar_texto(geral_txt)
+                cloud_geral = f"{input_base}_geral.png"
+                generate_wordcloud(text=geral_txt_limpo,
+                                output_path=cloud_geral,
+                                width=width, height=height)
+                z.write(cloud_geral, arcname=cloud_geral)
 
                 zp.seek(0)
                 progress_bar.progress(100)
