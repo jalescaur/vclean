@@ -232,85 +232,72 @@ with tab2:
 # === Aba 3: Relatório Quinzenal ===
 with tab3:
     st.header("🗓️ Relatório Quinzenal")
-    multitema = st.checkbox(
-        "🔄 Análise multitemática?",
-        help="Permitir repetir a mesma tag em vários macrotemas"
+    # … seu código de sessão, multitemas e checkbox para macros_confirmed …
+    gerar = st.session_state.get('macros_confirmed', False) and st.checkbox(
+        "✅ Confirmo que está tudo correto", key="confirm_files"
     )
-    uploaded_bi = st.file_uploader(
-        "📂 Envie o Excel para Relatório Quinzenal",
-        type=["xlsx"],
-        key="ubi"
-    )
-    if not uploaded_bi:
-        st.info("⬆️ Por favor, envie um arquivo para iniciar.")
-    else:
-        # … (inicialização de session_state e multiselects mantidos igual :contentReference[oaicite:0]{index=0})
-        if st.session_state.macros_confirmed:
-            gerar = st.checkbox("✅ Confirmo que está tudo correto", key="confirm_files")
-        else:
-            gerar = False
 
-            if gerar:
-                progress_bar = st.progress(0)
-                with st.spinner("Processando relatório quinzenal…"):
-                    # ← ADICIONADO: aqui criamos raw_path
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-                        tmp.write(uploaded_bi.read())
-                        raw_path = tmp.name
+    if gerar:
+        progress_bar = st.progress(0)
+        with st.spinner("Processando relatório quinzenal…"):
+            # 1) Grava temporário e faz o pipeline
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+                tmp.write(uploaded_bi.read())
+                raw_path = tmp.name
 
-                    input_base = os.path.splitext(uploaded_bi.name)[0]
-                    # agora raw_path está definido
+            input_base = Path(uploaded_bi.name).stem
+            cleaned_path, macro_txts, iram_txt, png_biweekly = full_pipeline(
+                raw_filepath=raw_path,
+                macrotheme_definitions=st.session_state.macros,
+                cleaned_output_filename=f"{input_base}_cleaned.xlsx",
+                width=width,
+                height=height
+            )
 
-                # ④ full_pipeline agora recebe width,height e retorna png_biweekly
-                    cleaned_path, macro_txts, iram_txt, png_biweekly = full_pipeline(
-                        raw_filepath=raw_path,
-                        macrotheme_definitions=st.session_state.macros,
-                        cleaned_output_filename=f"{input_base}_cleaned.xlsx",
-                        width=width,
-                        height=height
-                    )
+        # 2) Empacota tudo **aqui**, dentro do mesmo `if gerar:`
+        zp = BytesIO()
+        with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
+            # a) planilha limpa e .txts
+            z.writestr(Path(cleaned_path).name, open(cleaned_path, "rb").read())
+            for p in macro_txts:
+                z.writestr(Path(p).name, open(p, "rb").read())
+            z.writestr(Path(iram_txt).name, open(iram_txt, "rb").read())
 
+            # b) gráfico de volumetria quinzenal
+            z.write(png_biweekly, arcname="biweekly_volume_chart.png")
 
-                # ← ADICIONADO: prepara ZIP com todos os itens + nuvens
-            zp = BytesIO()
-            with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
-                # a) planilha e macro .txts e corpus
-                z.writestr(Path(cleaned_path).name, open(cleaned_path, "rb").read())
-                for p in macro_txts:
-                    z.writestr(Path(p).name, open(p, "rb").read())
-                z.writestr(Path(iram_txt).name, open(iram_txt, "rb").read())
-
-                # b) gráfico de volumetria quinzenal
-                z.write(png_biweekly, arcname="biweekly_volume_chart.png")
-
-                # c) nuvens de cada macrotema
-                for p in macro_txts:
-                    txt = open(p, "r", encoding="utf-8").read()
-                    txt_limpo = preprocessar_texto(txt)
-                    cloud_mt = f"{Path(p).stem}.png"
-                    generate_wordcloud(text=txt_limpo,
-                                    output_path=cloud_mt,
-                                    width=width, height=height)
-                    z.write(cloud_mt, arcname=cloud_mt)
-
-                # d) nuvem geral (corpus)
-                geral_txt = open(iram_txt, "r", encoding="utf-8").read()
-                geral_txt_limpo = preprocessar_texto(geral_txt)
-                cloud_geral = f"{input_base}_geral.png"
-                generate_wordcloud(text=geral_txt_limpo,
-                                output_path=cloud_geral,
-                                width=width, height=height)
-                z.write(cloud_geral, arcname=cloud_geral)
-
-                zp.seek(0)
-                progress_bar.progress(100)
-                st.download_button(
-                    "📥 Baixar Relatório Quinzenal",
-                    data=zp,
-                    file_name=f"{input_base}_relatorio_quinzenal.zip",
-                    mime="application/zip"
+            # c) nuvens de cada macrotema
+            for p in macro_txts:
+                txt = open(p, "r", encoding="utf-8").read()
+                txt_limpo = preprocessar_texto(txt)
+                cloud_mt = f"{Path(p).stem}.png"
+                generate_wordcloud(
+                    text=txt_limpo,
+                    output_path=cloud_mt,
+                    width=width, height=height
                 )
-                st.success("🎉 Relatório Quinzenal gerado com sucesso!")
+                z.write(cloud_mt, arcname=cloud_mt)
+
+            # d) nuvem geral (corpus)
+            geral_txt = open(iram_txt, "r", encoding="utf-8").read()
+            geral_txt_limpo = preprocessar_texto(geral_txt)
+            cloud_geral = f"{input_base}_geral.png"
+            generate_wordcloud(
+                text=geral_txt_limpo,
+                output_path=cloud_geral,
+                width=width, height=height
+            )
+            z.write(cloud_geral, arcname=cloud_geral)
+
+        progress_bar.progress(100)
+        zp.seek(0)
+        st.download_button(
+            "📥 Baixar Relatório Quinzenal",
+            data=zp.getvalue(),
+            file_name=f"{input_base}_relatorio_quinzenal.zip",
+            mime="application/zip"
+        )
+        st.success("🎉 Relatório Quinzenal gerado com sucesso!")
 
 # — Cleanup temporário —
 if 'raw_path' in locals() and raw_path and os.path.exists(raw_path):
