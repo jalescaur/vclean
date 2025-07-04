@@ -232,41 +232,50 @@ with tab2:
 # === Aba 3: Relatório Quinzenal ===
 with tab3:
     st.header("🗓️ Relatório Quinzenal")
-    # … seu código de sessão, multitemas e checkbox para macros_confirmed …
-    gerar = st.session_state.get('macros_confirmed', False) and st.checkbox(
-        "✅ Confirmo que está tudo correto", key="confirm_files"
+
+    # 1) Checkbox de confirmação de macros
+    gerar = (
+        st.session_state.get('macros_confirmed', False)
+        and st.checkbox("✅ Confirmo que está tudo correto", key="confirm_files")
     )
 
     if gerar:
-        progress_bar = st.progress(0)
-        with st.spinner("Processando relatório quinzenal…"):
-            # 1) Grava temporário e faz o pipeline
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-                tmp.write(uploaded_bi.read())
-                raw_path = tmp.name
+        # 2) Cria o arquivo temporário e chama o pipeline
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            tmp.write(uploaded_bi.read())
+            raw_path = tmp.name
 
-            input_base = Path(uploaded_bi.name).stem
-            cleaned_path, macro_txts, iram_txt, png_biweekly = full_pipeline(
-                raw_filepath=raw_path,
-                macrotheme_definitions=st.session_state.macros,
-                cleaned_output_filename=f"{input_base}_cleaned.xlsx",
-                width=width,
-                height=height
-            )
+        input_base = Path(uploaded_bi.name).stem
 
-        # 2) Empacota tudo **aqui**, dentro do mesmo `if gerar:`
+        # Aqui chamamos o full_pipeline COM width/height e recebemos o PNG
+        cleaned_path, macro_txts, iram_txt, png_biweekly = full_pipeline(
+            raw_filepath=raw_path,
+            macrotheme_definitions=st.session_state.macros,
+            cleaned_output_filename=f"{input_base}_cleaned.xlsx",
+            width=width,
+            height=height
+        )
+
+        # 3) Agora, **dentro desse mesmo if**, montamos o ZIP
         zp = BytesIO()
         with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
-            # a) planilha limpa e .txts
-            z.writestr(Path(cleaned_path).name, open(cleaned_path, "rb").read())
+            # a) Adiciona a planilha limpa
+            z.writestr(
+                Path(cleaned_path).name,
+                open(cleaned_path, "rb").read()
+            )
+
+            # b) Adiciona cada arquivo de macrotema
             for p in macro_txts:
                 z.writestr(Path(p).name, open(p, "rb").read())
+
+            # c) Adiciona o corpus geral
             z.writestr(Path(iram_txt).name, open(iram_txt, "rb").read())
 
-            # b) gráfico de volumetria quinzenal
+            # d) Adiciona o gráfico de volumetria quinzenal
             z.write(png_biweekly, arcname="biweekly_volume_chart.png")
 
-            # c) nuvens de cada macrotema
+            # e) Gera e adiciona as nuvens de macrotema
             for p in macro_txts:
                 txt = open(p, "r", encoding="utf-8").read()
                 txt_limpo = preprocessar_texto(txt)
@@ -278,7 +287,7 @@ with tab3:
                 )
                 z.write(cloud_mt, arcname=cloud_mt)
 
-            # d) nuvem geral (corpus)
+            # f) Gera e adiciona a nuvem geral (corpus)
             geral_txt = open(iram_txt, "r", encoding="utf-8").read()
             geral_txt_limpo = preprocessar_texto(geral_txt)
             cloud_geral = f"{input_base}_geral.png"
@@ -289,7 +298,7 @@ with tab3:
             )
             z.write(cloud_geral, arcname=cloud_geral)
 
-        progress_bar.progress(100)
+        # 4) Finaliza e disponibiliza o download
         zp.seek(0)
         st.download_button(
             "📥 Baixar Relatório Quinzenal",
