@@ -29,12 +29,16 @@ from regex import preprocessar_texto
 
 from utils.plot_utils import generate_daily_volume_chart
 
-# ==== Configuração da página ====
+# ← AQUI ↓, logo depois de set_page_config:
 st.set_page_config(
     page_title="📊 V-Tracker: Data Cleaning & Analysis",
     page_icon="📈",
     layout="wide"
 )
+
+# Inicializa a chave macros_confirmed para evitar AttributeError
+if 'macros_confirmed' not in st.session_state:
+    st.session_state.macros_confirmed = False
 
 # ==== CSS ====
 st.markdown("""
