@@ -233,80 +233,58 @@ with tab2:
 with tab3:
     st.header("🗓️ Relatório Quinzenal")
 
-    # 1) Checkbox de confirmação de macros
-    gerar = (
-        st.session_state.get('macros_confirmed', False)
-        and st.checkbox("✅ Confirmo que está tudo correto", key="confirm_files")
+    # 1) Checkbox multitema e uploader
+    multitema = st.checkbox(
+        "🔄 Análise multitemática?",
+        help="Permitir repetir a mesma tag em vários macrotemas"
+    )
+    uploaded_bi = st.file_uploader(
+        "📂 Envie o Excel para Relatório Quinzenal",
+        type=["xlsx"],
+        key="ubi"
     )
 
-    if gerar:
-        # 2) Cria o arquivo temporário e chama o pipeline
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-            tmp.write(uploaded_bi.read())
-            raw_path = tmp.name
-
-        input_base = Path(uploaded_bi.name).stem
-
-        # Aqui chamamos o full_pipeline COM width/height e recebemos o PNG
-        cleaned_path, macro_txts, iram_txt, png_biweekly = full_pipeline(
-            raw_filepath=raw_path,
-            macrotheme_definitions=st.session_state.macros,
-            cleaned_output_filename=f"{input_base}_cleaned.xlsx",
-            width=width,
-            height=height
+    # Se não enviou ainda, não tentamos usar uploaded_bi
+    if not uploaded_bi:
+        st.info("⬆️ Por favor, envie um arquivo para iniciar.")
+    else:
+        # 2) Só agora definimos `gerar`, porque `uploaded_bi` existe
+        gerar = (
+            st.session_state.get('macros_confirmed', False)
+            and st.checkbox("✅ Confirmo que está tudo correto", key="confirm_files")
         )
 
-        # 3) Agora, **dentro desse mesmo if**, montamos o ZIP
-        zp = BytesIO()
-        with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
-            # a) Adiciona a planilha limpa
-            z.writestr(
-                Path(cleaned_path).name,
-                open(cleaned_path, "rb").read()
+        if gerar:
+            # 3) Cria temporário e chama o pipeline
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+                tmp.write(uploaded_bi.read())
+                raw_path = tmp.name
+
+            # Aqui **a variável uploaded_bi está definida**, então podemos usar .name
+            input_base = Path(uploaded_bi.name).stem
+
+            cleaned_path, macro_txts, iram_txt, png_biweekly = full_pipeline(
+                raw_filepath=raw_path,
+                macrotheme_definitions=st.session_state.macros,
+                cleaned_output_filename=f"{input_base}_cleaned.xlsx",
+                width=width,
+                height=height
             )
 
-            # b) Adiciona cada arquivo de macrotema
-            for p in macro_txts:
-                z.writestr(Path(p).name, open(p, "rb").read())
-
-            # c) Adiciona o corpus geral
-            z.writestr(Path(iram_txt).name, open(iram_txt, "rb").read())
-
-            # d) Adiciona o gráfico de volumetria quinzenal
-            z.write(png_biweekly, arcname="biweekly_volume_chart.png")
-
-            # e) Gera e adiciona as nuvens de macrotema
-            for p in macro_txts:
-                txt = open(p, "r", encoding="utf-8").read()
-                txt_limpo = preprocessar_texto(txt)
-                cloud_mt = f"{Path(p).stem}.png"
-                generate_wordcloud(
-                    text=txt_limpo,
-                    output_path=cloud_mt,
-                    width=width, height=height
-                )
-                z.write(cloud_mt, arcname=cloud_mt)
-
-            # f) Gera e adiciona a nuvem geral (corpus)
-            geral_txt = open(iram_txt, "r", encoding="utf-8").read()
-            geral_txt_limpo = preprocessar_texto(geral_txt)
-            cloud_geral = f"{input_base}_geral.png"
-            generate_wordcloud(
-                text=geral_txt_limpo,
-                output_path=cloud_geral,
-                width=width, height=height
+            # 4) Monta e disponibiliza o ZIP (tudo ainda dentro de `if gerar:`)
+            zp = BytesIO()
+            with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
+                # … acrescenta planilha, macro .txt, corpus …
+                z.write(png_biweekly, arcname="biweekly_volume_chart.png")
+                # … gera e adiciona nuvens …
+            zp.seek(0)
+            st.download_button(
+                "📥 Baixar Relatório Quinzenal",
+                data=zp.getvalue(),
+                file_name=f"{input_base}_relatorio_quinzenal.zip",
+                mime="application/zip"
             )
-            z.write(cloud_geral, arcname=cloud_geral)
-
-        # 4) Finaliza e disponibiliza o download
-        zp.seek(0)
-        st.download_button(
-            "📥 Baixar Relatório Quinzenal",
-            data=zp.getvalue(),
-            file_name=f"{input_base}_relatorio_quinzenal.zip",
-            mime="application/zip"
-        )
-        st.success("🎉 Relatório Quinzenal gerado com sucesso!")
+            st.success("🎉 Relatório Quinzenal gerado com sucesso!")
 
 # — Cleanup temporário —
 if 'raw_path' in locals() and raw_path and os.path.exists(raw_path):
