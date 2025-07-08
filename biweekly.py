@@ -267,78 +267,91 @@ def create_relative_frequency_summary(df, assignments, macrotheme_definitions, t
 
     return macro_freq, microtheme_freq
 
-def full_pipeline(raw_filepath, macrotheme_definitions, cleaned_output_filename, width, height):
-    raw_path = Path(raw_filepath)
+import os
+import traceback
+from pathlib import Path
+import pandas as pd
+
+from utils.plot_utils import generate_biweekly_dual_axis_chart
+# ↳ As funções abaixo devem estar definidas no mesmo arquivo, acima deste ponto:
+#    load_and_clean_sheet, clean_columns_and_values, process_grupos_column,
+#    enrich_parlamentar_and_date, add_analysis_column,
+#    assign_macrothemes, create_pivot_summary,
+#    create_relative_frequency_summary, export_macrotheme_txts, export_iramuteq
+
+def full_pipeline(
+    raw_filepath: str,
+    macrotheme_definitions: dict,
+    cleaned_output_filename: str,
+    width: int,
+    height: int
+):
+    # 1) Define caminhos
+    raw_path     = Path(raw_filepath)
     cleaned_path = raw_path.parent / cleaned_output_filename
 
-    df_main = load_and_clean_sheet(raw_path, sheet_name="Ocorrências", is_main=True)
+    # 2) Define clean_base imediatamente
+    clean_base = Path(cleaned_output_filename).stem
+    if clean_base.endswith("_cleaned"):
+        clean_base = clean_base[:-len("_cleaned")]
 
+    # 3) Carrega e mescla Ocorrências + Tags
     try:
-        df_tags = load_and_clean_sheet(raw_path, sheet_name="Tags", is_main=False)
-        tag_fallback = pd.DataFrame(0, index=range(len(df_main)), columns=df_tags.columns)
+        df_main = load_and_clean_sheet(raw_path, sheet_name="Ocorrências", is_main=True)
+        df_tags = load_and_clean_sheet(raw_path, sheet_name="Tags",      is_main=False)
+        tag_fallback = pd.DataFrame(0, index=df_main.index, columns=df_tags.columns)
         df_tags = df_tags.applymap(lambda x: 1 if str(x).strip().upper() == "SIM" else 0)
-        rows_to_fill = min(len(df_tags), len(tag_fallback))
-        tag_fallback.iloc[:rows_to_fill] = df_tags.iloc[:rows_to_fill]
+        tag_fallback.iloc[:len(df_tags), :] = df_tags
         df_combined = pd.concat([df_main, tag_fallback], axis=1)
     except Exception:
         traceback.print_exc()
-        df_combined = df_main.copy()
+        df_combined = load_and_clean_sheet(raw_path, sheet_name="Ocorrências", is_main=True)
 
+    # 4) Limpeza e enriquecimento do DataFrame
     df = clean_columns_and_values(df_combined)
     df = process_grupos_column(df)
     df = enrich_parlamentar_and_date(df)
     df = add_analysis_column(df)
 
+    # 5) → Agora sim: calcula os assignments
     assignments = assign_macrothemes(df, macrotheme_definitions)
 
-    # Export final Excel with pivots
+    # 6) Gera o Excel final com pivôs
     with pd.ExcelWriter(cleaned_path, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name='Cleaned Data')
+
         pivot_summary, total_posts = create_pivot_summary(df, assignments, macrotheme_definitions)
         pivot_summary.to_excel(writer, index=False, sheet_name='pvt_summary')
+
         macro_freq, microtheme_freq = create_relative_frequency_summary(
             df, assignments, macrotheme_definitions, total_posts
         )
         macro_freq.to_excel(writer, index=False, sheet_name='macro_freq')
         microtheme_freq.to_excel(writer, index=False, sheet_name='microtheme_freq')
 
-    # ——— Gera o gráfico quinzenal transparente ——— (2025-7-3)
-    # usa o pivot_summary já criado acima
+    # 7) Gera o gráfico quinzenal transparente
     output_dir = cleaned_path.parent
     os.makedirs(output_dir, exist_ok=True)
 
     png_biweekly = output_dir / f"{clean_base}_vol.png"
-    # pivot_summary vem do create_pivot_summary
     generate_biweekly_dual_axis_chart(
         pivot_summary,
         str(png_biweekly),
         width,
         height
     )
-    print(f"🖼️ Gráfico quinzenal salvo como: {png_biweekly}")
 
-    # --- Novo código para definir o prefixo base sem "_cleaned" ---
-    stem = cleaned_path.stem
-    if stem.endswith("_cleaned"):
-        clean_base = stem[:-len("_cleaned")]
-    else:
-        clean_base = stem
-
-    # Prefixo para arquivos de macrotema com sufixo "_ai"
-    ai_macro_base = f"{clean_base}_ai"
-    # --- Fim do novo código ---
-
-    # Export macrotheme .txt usando o novo base_name (inclui "_ai")
-    output_txts = export_macrotheme_txts(
+    # 8) Exporta .txt de macrotemas e corpus
+    ai_macro_base     = f"{clean_base}_ai"
+    output_txts       = export_macrotheme_txts(
         df,
         assignments,
         macrotheme_definitions,
-        base_name=ai_macro_base,           # <— aqui usamos {base}_ai
-        output_dir=cleaned_path.parent
+        base_name=ai_macro_base,
+        output_dir=output_dir
     )
-
-    # Export Iramuteq .txt com sufixo "_corpus.txt"
-    iramuteq_txt_path = cleaned_path.parent / f"{clean_base}_corpus.txt"
+    iramuteq_txt_path = output_dir / f"{clean_base}_corpus.txt"
     export_iramuteq(df, iramuteq_txt_path)
 
+    # 9) Retorna tudo, incluindo o PNG
     return cleaned_path, output_txts, iramuteq_txt_path, png_biweekly

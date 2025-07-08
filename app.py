@@ -62,36 +62,30 @@ st.markdown("""
 # ==== Título geral ====
 st.title("📊 V-Tracker: Data Cleaning & Analysis")
 
-# ← ADICIONADO: controle de tamanho da nuvem
-st.sidebar.header('Tamanho da Nuvem')
-size_label = st.sidebar.selectbox(
-    'Escolha um tamanho:',
-    [
-        'Quadrado (800×800)',
-        'Retângulo (920×530)',
-        'WashTape 1 (290×1760)',
-        'WashTape 2 (290×760)'
-    ]
+# → Nuvem de palavras
+cloud_size_label = st.sidebar.selectbox(
+    'Tamanho da Nuvem',
+    ['Quadrado', 'Retângulo', 'WashTape 1 (290×1760)', 'WashTape 2 (290×760)']
 )
-size_map = {
-    'Quadrado (800×800)':  (800, 800),
-    'Retângulo (920×530)': (920, 530),
+cloud_size_map = {
+    'Quadrado':  (1600, 1600),
+    'Retângulo': (1840, 1060),
     'WashTape 1 (290×1760)': (290, 1760),
     'WashTape 2 (290×760)':  (290, 760),
 }
-width, height = size_map[size_label]
+cloud_w, cloud_h = cloud_size_map[cloud_size_label]
 
-# ← ADICIONADO: volumetria
-st.sidebar.header('Tamanho dos Gráficos')
-size_opt = st.sidebar.selectbox(
-    'Escolha um tamanho de gráfico:',
+# → Gráficos de volumetria
+plot_size_label = st.sidebar.selectbox(
+    'Tamanho do Gráfico',
     ['Diário (2475×1885)', 'Relatório (3780×1522)']
 )
-size_map = {
+plot_size_map = {
     'Diário (2475×1885)':  (2475, 1885),
     'Relatório (3780×1522)': (3780, 1522),
 }
-width, height = size_map[size_opt]  # ②
+plot_w, plot_h = plot_size_map[plot_size_label]
+
 
 # ==== Abas ====
 tab1, tab2, tab3 = st.tabs([
@@ -117,46 +111,58 @@ with tab1:
             file_ai     = f"{base}_ai.txt"
             file_corpus = f"{base}_corpus.txt"
 
-            # → Mesma lógica de temp file e processamento existente
+            # → Mesma lógica de temp file
             with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
                 tmp.write(uploaded_pub.read())
                 tmp_path = tmp.name
 
+            # ← AQUI: chame process_publicacoes passando width e height
+            # e desempacote em df e png_daily
+            df, png_daily = process_publicacoes(
+                tmp_path,
+                output_filename=file_clean,
+                width=plot_w,
+                height=plot_h
+            )
 
-               # ===== NOVO 2025-7-3
-                
-            df = process_publicacoes(tmp_path, output_filename=file_clean)
+            # análise e renomeações
             analysis_publicacoes(df.copy(), txt_filename=file_ai)
             old_iram = file_clean.replace(".xlsx", "_iramuteq.txt")
             if os.path.exists(old_iram):
                 os.rename(old_iram, file_corpus)
             os.remove(tmp_path)
 
-            # → Prepara buffers dos três arquivos originais
+            # prepara buffers para o ZIP
             excel_buf = BytesIO(); df.to_excel(excel_buf, index=False)
             ai_buf    = BytesIO(open(file_ai,     "rb").read())
             corp_buf  = BytesIO(open(file_corpus, "rb").read())
 
-            # ← ADICIONADO: Geração de ZIP incluindo wordcloud
+            # monta o ZIP com tudo
             zp = BytesIO()
             with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
-                # arquivos originais
+                # 1) tabelas e .txt
                 z.writestr(file_clean,  excel_buf.getvalue())
+                z.writestr(file_ai,     ai_buf.getvalue())
+                z.writestr(file_corpus, corp_buf.getvalue())
 
-                # ← ADICIONADO: Gera e adiciona a nuvem de Publicações
+                # 2) gráfico de volumetria diária
+                #    usa png_daily retornado pela função
+                z.write(png_daily, arcname="daily_volume_chart.png")
+
+                # 3) wordcloud de publicações
                 cloud_pub = f"{base}_cloud.png"
-                texto_pub = open(file_ai, "r", encoding="utf-8").read() + "\n" + \
-                            open(file_corpus, "r", encoding="utf-8").read()
-
-                # Aplicar a limpeza de texto usando a função importada
-                texto_pub_limpo = preprocessar_texto(texto_pub) # <--- REGEX
-
+                texto_pub = (
+                    open(file_ai, "r", encoding="utf-8").read()
+                    + "\n"
+                    + open(file_corpus, "r", encoding="utf-8").read()
+                )
+                texto_pub_limpo = preprocessar_texto(texto_pub)
                 generate_wordcloud(
                     text=texto_pub_limpo,
                     output_path=cloud_pub,
-                    width=width, height=height
+                    width=plot_w, height=plot_h
                 )
-                z.write(cloud_pub, arcname=cloud_pub)
+                z.write(cloud_pub, arcname="daily_cloud.png")
 
             zp.seek(0)
             st.download_button(
@@ -216,7 +222,7 @@ with tab2:
                 generate_wordcloud(
                     text=texto_news_limpo,
                     output_path=cloud_news,
-                    width=width, height=height
+                    width=plot_w, height=plot_h
                 )
                 z.write(cloud_news, arcname=cloud_news)
 
@@ -233,55 +239,103 @@ with tab2:
 with tab3:
     st.header("🗓️ Relatório Quinzenal")
 
-    # 1) Checkbox multitema e uploader
-    multitema = st.checkbox(
-        "🔄 Análise multitemática?",
-        help="Permitir repetir a mesma tag em vários macrotemas"
-    )
+    # Apenas definir o uploader
     uploaded_bi = st.file_uploader(
         "📂 Envie o Excel para Relatório Quinzenal",
         type=["xlsx"],
         key="ubi"
     )
-
-    # Se não enviou ainda, não tentamos usar uploaded_bi
     if not uploaded_bi:
         st.info("⬆️ Por favor, envie um arquivo para iniciar.")
     else:
-        # 2) Só agora definimos `gerar`, porque `uploaded_bi` existe
-        gerar = (
-            st.session_state.get('macros_confirmed', False)
-            and st.checkbox("✅ Confirmo que está tudo correto", key="confirm_files")
+        # ─── 1) Armazena os bytes do upload ───────────────────────────
+        bi_bytes = uploaded_bi.read()
+
+        # ─── 2) Grava um temporário para tratar e outro para pipeline ──
+        tmp_sel = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        tmp_sel.write(bi_bytes)
+        tmp_sel.close()
+        sel_path = tmp_sel.name
+
+        raw_path = sel_path  # vamos usar o mesmo arquivo para o pipeline
+
+        # ─── 3) Carrega e limpa o DataFrame para extrair só as tags ───
+        from biweekly import (
+            load_and_clean_sheet,
+            clean_columns_and_values,
+            process_grupos_column,
+            enrich_parlamentar_and_date
         )
 
-        if gerar:
-            # 3) Cria temporário e chama o pipeline
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-                tmp.write(uploaded_bi.read())
-                raw_path = tmp.name
+        df_main = load_and_clean_sheet(sel_path, sheet_name="Ocorrências", is_main=True)
+        try:
+            df_tags = load_and_clean_sheet(sel_path, sheet_name="Tags", is_main=False)
+            # fallback de Tags
+            fb = pd.DataFrame(0, index=df_main.index, columns=df_tags.columns)
+            df_tags = df_tags.applymap(lambda x: 1 if str(x).strip().upper()=="SIM" else 0)
+            fb.iloc[:len(df_tags), :] = df_tags
+            df_combined = pd.concat([df_main, fb], axis=1)
+        except Exception:
+            df_combined = df_main
 
-            # Aqui **a variável uploaded_bi está definida**, então podemos usar .name
-            input_base = Path(uploaded_bi.name).stem
+        df = clean_columns_and_values(df_combined)
+        df = process_grupos_column(df)
+        df = enrich_parlamentar_and_date(df)
 
+        # ─── 4) Define só as colunas “tag” (microtemas) ────────────────
+        from pandas.api.types import is_numeric_dtype
+
+        # Só as colunas cujos valores são 0/1 (Tags)
+        tema_cols = [
+            col for col in df.columns
+            if is_numeric_dtype(df[col])
+            and df[col].dropna().isin([0,1]).all()]
+
+        # ─── 5) Interface para criar macrotemas a partir dessas tags ─────
+        st.markdown("### Definição de Macrotemas")
+        n_macro = st.number_input(
+            "Quantos macrotemas deseja?",
+            min_value=1, max_value=10, value=2, step=1, key="n_macro"
+        )
+        macros = {}
+        for i in range(1, n_macro+1):
+            sel = st.multiselect(
+                f"Macrotema {i} (selecione TAGS)",
+                tema_cols,
+                key=f"macro_select_{i}"
+            )
+            macros[i] = sel
+        st.session_state.macros = macros
+
+        if st.button("✅ Confirmo os macrotemas acima", key="confirm_macros"):
+            st.session_state.macros_confirmed = True
+
+        # ─── 6) Só após confirmar, executa o pipeline completo ─────────
+        if st.session_state.macros_confirmed:
+            # chama seu pipeline, que agora retorna também png_biweekly
             cleaned_path, macro_txts, iram_txt, png_biweekly = full_pipeline(
                 raw_filepath=raw_path,
                 macrotheme_definitions=st.session_state.macros,
-                cleaned_output_filename=f"{input_base}_cleaned.xlsx",
-                width=width,
-                height=height
+                cleaned_output_filename=f"{Path(uploaded_bi.name).stem}_cleaned.xlsx",
+                width=plot_w,
+                height=plot_h
             )
 
-            # 4) Monta e disponibiliza o ZIP (tudo ainda dentro de `if gerar:`)
+            # monta e oferece o ZIP (mesma lógica de antes)
             zp = BytesIO()
             with zipfile.ZipFile(zp, "w", zipfile.ZIP_STORED) as z:
-                # … acrescenta planilha, macro .txt, corpus …
+                z.writestr(Path(cleaned_path).name, open(cleaned_path, "rb").read())
+                for p in macro_txts:
+                    z.writestr(Path(p).name, open(p, "rb").read())
+                z.writestr(Path(iram_txt).name, open(iram_txt, "rb").read())
                 z.write(png_biweekly, arcname="biweekly_volume_chart.png")
-                # … gera e adiciona nuvens …
+                # … nuvens de macrotema e geral …
+
             zp.seek(0)
             st.download_button(
                 "📥 Baixar Relatório Quinzenal",
                 data=zp.getvalue(),
-                file_name=f"{input_base}_relatorio_quinzenal.zip",
+                file_name=f"{Path(uploaded_bi.name).stem}_relatorio_quinzenal.zip",
                 mime="application/zip"
             )
             st.success("🎉 Relatório Quinzenal gerado com sucesso!")

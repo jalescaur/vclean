@@ -64,7 +64,6 @@ def generate_daily_volume_chart(
     plt.close(fig)
     return output_path
 
-
 def generate_biweekly_dual_axis_chart(
     df: pd.DataFrame,
     output_path: str,
@@ -74,52 +73,56 @@ def generate_biweekly_dual_axis_chart(
     """
     Gera um gráfico de colunas (gap width 150%) e linha de engajamento.
 
-    - df deve ter colunas ['Ano','Mês','Dia','Total_Publicações','Manifestações reais']
+    - df deve ter colunas ['Ano','Mês','Dia','Total_Publicações','Total_Engajamento']
     - output_path: caminho do PNG a salvar
     - width, height: dimensões em pixels
     """
     # 1) Constrói data e agrega
     df['date'] = pd.to_datetime(
-        df[['Ano', 'Mês', 'Dia']].astype(str).agg('-'.join, axis=1),
+        df[['Ano','Mês','Dia']].astype(str).agg('-'.join, axis=1),
         format='%Y-%m-%d', errors='coerce'
     )
     agg = df.groupby('date').agg(
-        Publicacoes=('Total_Publicações', 'sum'),
-        Engajamento=('Manifestações reais', 'sum')
+        Publicacoes=('Total_Publicações','sum'),
+        Engajamento=('Total_Engajamento','sum')
     ).reset_index()
 
     # 2) Cria figura transparente
     fig, ax1 = plt.subplots(figsize=(width/100, height/100))
     fig.patch.set_alpha(0)
-    ax2 = ax1.twinx()
 
-    # 3) Gráfico de colunas (Publicacoes)
-    # width ajustado para gap width 150% ≈ 1.5 vezes largura padrão
+    # 3) Barras no eixo primário (publicações)
     bar_width = 0.6
-    ax2.bar(
+    ax1.bar(
         agg['date'], agg['Publicacoes'],
-        width=bar_width, color='#F2F2F2', edgecolor='#A6A6A6', linewidth=0.75
+        width=bar_width,
+        color='#F2F2F2', edgecolor='#A6A6A6', linewidth=0.75
     )
+    ax1.set_ylabel(
+        'Publicações',
+        fontproperties=FONT_BOLD, fontsize=9, color='#26619C'
+    )
+    ax1.tick_params(labelsize=10.5)
 
-    # 4) Gráfico de linha (Engajamento)
-    ax1.plot(
+    # 4) Linha no eixo secundário (engajamento)
+    ax2 = ax1.twinx()
+    ax2.plot(
         agg['date'], agg['Engajamento'],
         linewidth=2, color='#26619C'
     )
-
-    # 5) Formata axes
-    ax1.xaxis.set_major_formatter(DateFormatter('%d/%m'))
-    ax1.set_xlabel('Data', fontproperties=FONT_BOLD, fontsize=9, color='#26619C')
-    ax1.set_ylabel('Engajamento', fontproperties=FONT_BOLD, fontsize=9, color='#26619C')
-    ax2.set_ylabel('Publicações', fontproperties=FONT_BOLD, fontsize=9, color='#26619C')
-    ax1.tick_params(labelsize=10.5)
+    ax2.set_ylabel(
+        'Engajamento',
+        fontproperties=FONT_BOLD, fontsize=9, color='#26619C'
+    )
     ax2.tick_params(labelsize=10.5)
 
-    # 6) Legendas
-    ax1.legend(['Engajamento'], loc='upper left', prop=FONT_REGULAR)
-    ax2.legend(['Publicações'], loc='upper right', prop=FONT_REGULAR)
+    # 5) Eixo X e legendas
+    ax1.xaxis.set_major_formatter(DateFormatter('%d/%m'))
+    ax1.set_xlabel('Data', fontproperties=FONT_BOLD, fontsize=9, color='#26619C')
+    ax1.legend(['Publicações'],   loc='upper left',  prop=FONT_REGULAR)
+    ax2.legend(['Engajamento'], loc='upper right', prop=FONT_REGULAR)
 
-    # 7) Salva PNG transparente
+    # 6) Salva PNG transparente
     plt.tight_layout()
     fig.savefig(output_path, transparent=True, bbox_inches='tight')
     plt.close(fig)
